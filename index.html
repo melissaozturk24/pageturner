@@ -1342,7 +1342,7 @@ RULES FOR SLUMP RESCUE:
 CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13. Set cover_url to https://covers.openlibrary.org/b/isbn/ISBN13-L.jpg using the real ISBN.
 
 Return JSON array of exactly 3 objects:
-[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","slump_confidence":"Why this specific book will work for this reader right now — one sentence, direct and honest.","reason":"Two natural sentences. First: what the book is about (no spoilers). Second: what it feels like to read.","amazon_search":"title author"}]`;
+[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","slump_confidence":"Why this specific book will work for this reader right now — one sentence, direct and honest.","reason":"Two full sentences. First: a proper synopsis (no spoilers). Second: the emotional reading experience.","amazon_search":"title author"}]`;
 
   try {
     const data  = await callClaude(prompt);
@@ -1720,10 +1720,10 @@ Recommend exactly 5 real books matching this reader. Every book must:
 - Be in English (translations OK)
 - Never invent titles — only well-known published books
 
-For reason: 2 natural sentences. First: what the book is about (no spoilers). Second: what it feels like to read. No labels.
+For reason: 2 full sentences of 15-25 words each. First sentence: a proper synopsis of the book — who the characters are, what situation they face, what the story is about. No spoilers. Second sentence: what the emotional experience of reading it feels like — the atmosphere, tone, and feeling it leaves you with. No labels or prefixes.
 
 Return ONLY a valid JSON array of exactly 5 objects:
-[{"title":"exact title","author":"Author Name","genre":"Genre","year":2021,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","reason":"Two natural sentences.","loved_ref":"","amazon_search":"title author"}]`;
+[{"title":"exact title","author":"Author Name","genre":"Genre","year":2021,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","reason":"Two full sentences. First: proper synopsis (no spoilers). Second: emotional reading experience.","loved_ref":"","amazon_search":"title author"}]`;
   try{
     const data=await callClaude(prompt);const books=extractBooks(data);
     addBooksToHistory(books);
@@ -1777,7 +1777,7 @@ YOUR RULES:
 2. Every book MUST match the genre exactly if specified. Dark Romance means Dark Romance only.
 3. Every book must have a Goodreads rating of 4.0 or above.
 4. Only English-language books or English translations.
-5. For the reason: write 2 natural sentences. First: what the book is about (no spoilers). Second: what it feels like to read. No labels or prefixes.
+5. For the reason: write 2 full sentences of 15-25 words each. First: a proper synopsis — who the characters are and what the story is about, no spoilers. Second: what the emotional experience of reading it feels like. No labels or prefixes.
 6. For match_breakdown: honestly state what criteria this book satisfies.
 
 Return ONLY a valid JSON array of exactly 3 books:
@@ -1812,7 +1812,7 @@ Similar means: same narrative DNA — tone, pacing, emotional register, protagon
 RATING RULE: Every book must have a Goodreads rating of at least 4.0.
 CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13 (13 digits, starts 978/979). Set cover_url to https://covers.openlibrary.org/b/isbn/ISBN13-L.jpg using the real ISBN. Only use ISBNs you are confident are correct.
 Return JSON array of exactly 3:
-[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.38,"pages":320,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"96%","reason":"Two natural sentences. First: what the book is about (no spoilers). Second: what it feels like to read.","amazon_search":"title author"}]`;
+[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.38,"pages":320,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"96%","reason":"Two full sentences. First: a proper synopsis (no spoilers). Second: the emotional reading experience.","amazon_search":"title author"}]`;
   try{
     const data=await callClaude(prompt);const books=extractBooks(data);
     document.getElementById('searchResults').innerHTML=`<div style="margin-bottom:1.2rem;font-size:12.5px;color:var(--ink-4);font-weight:300;">3 books with similar DNA to <em>${esc(title)}</em></div><div class="search-results-grid">${books.map(b=>bookCardHTML(b,false,true)).join('')}</div>`;
@@ -2066,7 +2066,7 @@ function attachBookActions() {
 The reader did NOT like "${book.title}" by ${book.author}${book.genre?' ('+book.genre+')':''} — do not recommend similar books.
 NEVER recommend: ${seen.join(', ')}.
 Rating: 4.0+ required. English only.
-Return JSON array of exactly 1 object: [{"title":"title","author":"Author","genre":"Genre","year":2022,"goodreads_rating":4.3,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg using actual ISBN","reason":"Two natural sentences. First: what the book is about (no spoilers). Second: what it feels like to read.","amazon_search":"title author"}]`;
+Return JSON array of exactly 1 object: [{"title":"title","author":"Author","genre":"Genre","year":2022,"goodreads_rating":4.3,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg using actual ISBN","reason":"Two full sentences. First: a proper synopsis (no spoilers). Second: the emotional reading experience.","amazon_search":"title author"}]`;
             const data = await callClaude(prompt);
             const books = extractBooks(data);
             if (books[0]) {
