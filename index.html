@@ -1674,7 +1674,7 @@ async function callClaude(prompt){
       'X-Title': 'Pageturner'
     },
     body: JSON.stringify({
-      model: 'google/gemini-flash-1.5:free',
+      model: 'openrouter/auto',
       messages: [
         { role: 'system', content: 'You are a literary expert. Respond ONLY with a valid JSON array. No markdown, no backticks, no preamble. Start with [ and end with ].' },
         { role: 'user', content: prompt }
