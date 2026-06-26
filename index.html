@@ -1378,6 +1378,7 @@ function slumpCardHTML(book) {
   <div class="book-info">
     <div class="book-title">${esc(book.title)}</div>
     <div class="book-author">${esc(book.author)}${book.year ? ' &middot; ' + book.year : ''}</div>
+    ${showGenreFlag && book.genre ? `<div style="display:inline-block;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;background:var(--surf-3);color:var(--ink-3);border:1px solid var(--border);border-radius:10px;padding:2px 8px;margin-bottom:4px;">${esc(book.genre)}</div>` : ''}
     <div class="book-meta">
       ${book.goodreads_rating ? `<span class="book-rating"><span class="book-star">&#9733;</span> ${book.goodreads_rating}</span>` : ''}
       ${book.pages ? `<span class="book-pages">${book.pages}p</span>` : ''}
@@ -1728,7 +1729,7 @@ CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13. Use it to constru
 - NEVER invent ISBNs. Only use ISBNs you are confident are correct.
 
 Return a JSON array of exactly 5 objects:
-[{"title":"exact title","author":"Author Name","genre":"Genre 2-3 words","year":2021,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","reason":"Write 2 short natural sentences. No labels, no prefixes. First sentence: what the book is about (no spoilers). Second: what it feels like to read. Under 45 words.","loved_ref":"If this recommendation connects to a specific book the reader has finished and rated 4+ stars in their journal, name that book title here. Otherwise empty string.","amazon_search":"title author"}]`;
+[{"title":"exact title","author":"Author Name","genre":"Genre 2-3 words","year":2021,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","reason":"Write 2 unique sentences specific to THIS book only. No labels. First: what this specific book is about (no spoilers). Second: what reading THIS book feels like. Never reuse the same description for different books.","loved_ref":"If this recommendation connects to a specific book the reader has finished and rated 4+ stars in their journal, name that book title here. Otherwise empty string.","amazon_search":"title author"}]`;
   try{
     const data=await callClaude(prompt);const books=extractBooks(data);
     addBooksToHistory(books);
@@ -1902,10 +1903,11 @@ function bookCardHTML(book, showGenreFlag=false, showMatch=false) {
   const onerrorScript = `_coverFailed(this)`;
 
   return `<div class="book-card" data-title="${esc(book.title)}" data-author="${esc(book.author)}" data-genre="${esc(book.genre||'')}" data-reason="${esc(book.reason||'')}" data-isbn="${esc(isbn)}" data-cover-url="${esc(imgSrc)}" data-cover-sources="${sourcesJson}" data-cover-idx="0">
-  ${showGenreFlag && book.genre ? `<div class="book-genre-flag">${esc(book.genre)}</div>` : ''}
+
   <div class="book-info">
     <div class="book-title">${esc(book.title)}</div>
     <div class="book-author">${esc(book.author)}${book.year ? ' &middot; ' + book.year : ''}</div>
+    ${showGenreFlag && book.genre ? `<div style="display:inline-block;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;background:var(--surf-3);color:var(--ink-3);border:1px solid var(--border);border-radius:10px;padding:2px 8px;margin-bottom:4px;">${esc(book.genre)}</div>` : ''}
     <div class="book-meta">
       ${book.goodreads_rating ? `<span class="book-rating"><span class="book-star">&#9733;</span> ${book.goodreads_rating}</span>` : ''}
       ${book.pages ? `<span class="book-pages">${book.pages}p</span>` : ''}
