@@ -1715,7 +1715,14 @@ async function loadDailyRecs(){
 Reader profile: ${ctx}${seenList}${lovedCtx}${popularInstruction}${moodInstruction}
 Recommend exactly 5 real English-language books (translations included) matching this profile.
 RATING RULE: Every book must have a real Goodreads rating of at least 4.0. Aim for 4.3+ on most picks.
-Do NOT recommend the most obvious bestsellers — include lesser-known gems. Mix publication years.
+ABSOLUTELY CRITICAL — REAL BOOKS ONLY:
+- Only recommend books you are 100% certain exist with these EXACT title and author
+- Every book must be findable on Amazon.com and Goodreads RIGHT NOW
+- Stick to well-known published books — bestsellers, award winners, critically acclaimed titles
+- If you are even 1% uncertain a book exists with that exact title and author, do NOT include it
+- Never invent or combine book titles
+- Preferred: books published by major publishers (Penguin, HarperCollins, Random House, Simon & Schuster, Macmillan)
+- Examples of safe books to recommend: The Midnight Library by Matt Haig, Normal People by Sally Rooney, Gone Girl by Gillian Flynn, The Name of the Wind by Patrick Rothfuss
 
 CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13. Use it to construct the cover_url.
 - ISBN-13 format: 13 digits, starts with 978 or 979, no hyphens. Example: 9780525559474
@@ -1775,6 +1782,7 @@ SEARCH CRITERIA:
 ${parts.join('\n')}
 
 RULES:
+0. REAL BOOKS ONLY: Every recommended book must exist exactly as stated. Only recommend books you are 100% certain exist on Amazon and Goodreads with that exact title and author. Stick to well-known published titles.
 1. SPECIFICITY OVER POPULARITY. Never recommend a book simply because it is well-known in the genre. Recommend it only if it genuinely satisfies the criteria above.
 2. RATING: Every book must have a real Goodreads rating of at least 4.0.
 3. HONEST PARTIAL MATCHES: If a perfect match for all criteria does not exist, say so explicitly in the reason field. Explain exactly which criteria it satisfies and which it only partially satisfies. Never pretend a book matches criteria it does not.
