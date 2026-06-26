@@ -1679,7 +1679,7 @@ async function callClaude(prompt){
       'X-Title': 'Pageturner'
     },
     body: JSON.stringify({
-      model: 'openrouter/auto',
+      model: 'meta-llama/llama-3.3-70b-instruct:free',
       messages: [
         { role: 'system', content: 'You are a literary expert. Respond ONLY with a valid JSON array. No markdown, no backticks, no preamble. Start with [ and end with ].' },
         { role: 'user', content: prompt }
@@ -1723,6 +1723,7 @@ async function loadDailyRecs(){
 Reader profile: ${ctx}${seenList}${lovedCtx}${popularInstruction}${moodInstruction}
 Recommend exactly 5 real English-language books (translations included) matching this profile.
 RATING RULE: Every book must have a real Goodreads rating of at least 4.0. Aim for 4.3+ on most picks.
+CRITICAL — REAL BOOKS ONLY: Only recommend books you are 100% certain exist. Every title, author name, publication year, and Goodreads rating must be accurate. If you are not certain a book exists, do not include it. Never invent or hallucinate book titles.
 Do NOT recommend the most obvious bestsellers — include lesser-known gems. Mix publication years.
 
 CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13. Use it to construct the cover_url.
@@ -1789,6 +1790,7 @@ RULES:
 4. STORYLINE IS SACRED: If a specific storyline is given, the plot situation must actually exist in the book — not be vaguely thematically related.
 5. EMOTIONAL REGISTER MUST MATCH: If specific feelings are requested, the book must reliably produce those feelings based on reader reviews — not just be in a genre that sometimes does.
 6. Only real English-language books (including English translations).
+CRITICAL — REAL BOOKS ONLY: Only recommend books you are 100% certain exist. Every title, author name, publication year, and Goodreads rating must be accurate. If you are not certain a book exists, do not include it. Never invent or hallucinate book titles.
 ${coverInstruction}
 
 Return a JSON array of exactly 3 objects. Each must have a "match_breakdown" field that honestly lists which criteria it fully satisfies, which it partially satisfies, and which it does not satisfy:
@@ -1821,6 +1823,7 @@ async function moreLikeThis(title,author,genre){
 Find exactly 3 books that are genuinely similar to "${title}" by ${author}${genre?' (genre: '+genre+')':''}.
 Similar means: same narrative DNA — tone, pacing, emotional register, protagonist type, and thematic concerns. Not just same genre.
 RATING RULE: Every book must have a Goodreads rating of at least 4.0.
+CRITICAL — REAL BOOKS ONLY: Only recommend books you are 100% certain exist. Every title, author name, publication year, and Goodreads rating must be accurate. If you are not certain a book exists, do not include it. Never invent or hallucinate book titles.
 CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13 (13 digits, starts 978/979). Set cover_url to https://covers.openlibrary.org/b/isbn/ISBN13-L.jpg using the real ISBN. Only use ISBNs you are confident are correct.
 Return JSON array of exactly 3:
 [{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.38,"pages":320,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"96%","reason":"Two sentences, no labels. Write 2 sentences, no labels. First: premise (no spoilers). Second: what reading it feels like.","amazon_search":"title author"}]`;
