@@ -1759,7 +1759,7 @@ async function runSearch(){
   if (storyline)        parts.push(`STORYLINE (hard filter — every result must feature this plot situation or dynamic): ${storyline}`);
   if (emotions.length)  parts.push(`EMOTIONAL EXPERIENCE REQUIRED (books must deliver these feelings): ${emotions.join('; ')}`);
   if (tropes.length)    parts.push(`TROPES / DYNAMICS (must be present, not just adjacent): ${tropes.join(', ')}`);
-  if (genre)            parts.push(`GENRE (exact match only — no related genres): ${genre}`);
+  if (genre)            parts.push(`GENRE (ABSOLUTE HARD FILTER — if this genre is specified, EVERY result MUST be exactly this genre and nothing else. A Thriller must be a Thriller. A Romance must be a Romance. Never substitute with a related genre. Reject any book that is not 100% this genre): ${genre}`);
   if (length)           parts.push(`Length: ${length}`);
   if (pace)             parts.push(`Pace: ${pace}`);
   if (avoidAuth)        parts.push(`Avoid these authors: ${avoidAuth}`);
