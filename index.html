@@ -1342,7 +1342,7 @@ RULES FOR SLUMP RESCUE:
 CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13. Set cover_url to https://covers.openlibrary.org/b/isbn/ISBN13-L.jpg using the real ISBN.
 
 Return JSON array of exactly 3 objects:
-[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","slump_confidence":"Why this specific book will work for this reader right now — one sentence, direct and honest.","reason":"Write 2 sentences, no labels. First: premise (no spoilers). Second: what reading it feels like.","amazon_search":"title author"}]`;
+[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","slump_confidence":"Why this specific book will work for this reader right now — one sentence, direct and honest.","reason":"SENTENCE 1: The premise in one sentence, no spoilers. SENTENCE 2: What it will feel like to read — the atmosphere and emotional experience.","amazon_search":"title author"}]`;
 
   try {
     const data  = await callClaude(prompt);
@@ -1375,14 +1375,9 @@ function slumpCardHTML(book) {
     ${coverSrc ? `<img src="${coverSrc}" alt="${esc(book.title)}" onload="${onld}" onerror="${onerr}">` : '<img alt="" style="display:none;">'}
     <div class="cover-placeholder"><div class="cp-spine"></div><div class="cp-title">${esc(book.title)}</div><div class="cp-author">${esc(book.author)}</div></div>
   </div>
-  <div class="book-cover-wrap">
-    ${showGenreFlag && book.genre ? `<div class="book-genre-flag">${esc(book.genre)}</div>` : ''}
-    <div class="cover-placeholder"><div class="cp-spine"></div><div class="cp-title">${esc(book.title)}</div><div class="cp-author">${esc(book.author)}</div></div>
-  </div>
   <div class="book-info">
     <div class="book-title">${esc(book.title)}</div>
     <div class="book-author">${esc(book.author)}${book.year ? ' &middot; ' + book.year : ''}</div>
-  
     <div class="book-meta">
       ${book.goodreads_rating ? `<span class="book-rating"><span class="book-star">&#9733;</span> ${book.goodreads_rating}</span>` : ''}
       ${book.pages ? `<span class="book-pages">${book.pages}p</span>` : ''}
@@ -1667,14 +1662,12 @@ function getLovedBooks() {
 }
 /* ── AI API ─────────────────────────────────────────────────────────
    Paste your free Gemini key below (get it at aistudio.google.com)  */
-const OPENROUTER_API_KEY = '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';
-
 async function callClaude(prompt){
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+      'Authorization': 'Bearer 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',
       'HTTP-Referer': 'https://melissaozturk24.github.io/pageturner',
       'X-Title': 'Pageturner'
     },
@@ -1691,11 +1684,11 @@ async function callClaude(prompt){
   return res.json();
 }
 function extractBooks(data){
-  const text = data?.choices?.[0]?.message?.content || '';
-  if(!text) throw new Error('No response received');
-  const clean = text.replace(/```json|```/g,'').trim();
-  const s = clean.indexOf('['), e = clean.lastIndexOf(']');
-  if(s===-1||e===-1) throw new Error('Invalid response format');
+  const text=data?.choices?.[0]?.message?.content||'';
+  if(!text)throw new Error('No response received');
+  const clean=text.replace(/```json|```/g,'').trim();
+  const s=clean.indexOf('['),e=clean.lastIndexOf(']');
+  if(s===-1||e===-1)throw new Error('Invalid response format');
   return JSON.parse(clean.substring(s,e+1));
 }
 
@@ -1723,7 +1716,6 @@ async function loadDailyRecs(){
 Reader profile: ${ctx}${seenList}${lovedCtx}${popularInstruction}${moodInstruction}
 Recommend exactly 5 real English-language books (translations included) matching this profile.
 RATING RULE: Every book must have a real Goodreads rating of at least 4.0. Aim for 4.3+ on most picks.
-CRITICAL — REAL BOOKS ONLY: Only recommend books you are 100% certain exist. Every title, author name, publication year, and Goodreads rating must be accurate. If you are not certain a book exists, do not include it. Never invent or hallucinate book titles.
 Do NOT recommend the most obvious bestsellers — include lesser-known gems. Mix publication years.
 
 CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13. Use it to construct the cover_url.
@@ -1734,7 +1726,7 @@ CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13. Use it to constru
 - NEVER invent ISBNs. Only use ISBNs you are confident are correct.
 
 Return a JSON array of exactly 5 objects:
-[{"title":"exact title","author":"Author Name","genre":"Genre 2-3 words","year":2021,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","reason":"Write 2 sentences specific to this book. No labels or prefixes ever. First sentence: the premise of this specific book (no spoilers). Second sentence: what reading this specific book feels like emotionally. Make each description unique to the book.","loved_ref":"If this recommendation connects to a specific book the reader has finished and rated 4+ stars in their journal, name that book title here. Otherwise empty string.","amazon_search":"title author"}]`;
+[{"title":"exact title","author":"Author Name","genre":"Genre 2-3 words","year":2021,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","reason":"SENTENCE 1: The core premise in one sentence — what the world or situation is, enough to know what the book is about, zero spoilers. SENTENCE 2: What the reader will FEEL reading it — the atmosphere, emotional texture, the kind of experience it delivers. Focus on feeling, not on why we picked it. Max 45 words total. No spoilers.","loved_ref":"If this recommendation connects to a specific book the reader has finished and rated 4+ stars in their journal, name that book title here. Otherwise empty string.","amazon_search":"title author"}]`;
   try{
     const data=await callClaude(prompt);const books=extractBooks(data);
     addBooksToHistory(books);
@@ -1790,11 +1782,10 @@ RULES:
 4. STORYLINE IS SACRED: If a specific storyline is given, the plot situation must actually exist in the book — not be vaguely thematically related.
 5. EMOTIONAL REGISTER MUST MATCH: If specific feelings are requested, the book must reliably produce those feelings based on reader reviews — not just be in a genre that sometimes does.
 6. Only real English-language books (including English translations).
-CRITICAL — REAL BOOKS ONLY: Only recommend books you are 100% certain exist. Every title, author name, publication year, and Goodreads rating must be accurate. If you are not certain a book exists, do not include it. Never invent or hallucinate book titles.
 ${coverInstruction}
 
 Return a JSON array of exactly 3 objects. Each must have a "match_breakdown" field that honestly lists which criteria it fully satisfies, which it partially satisfies, and which it does not satisfy:
-[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.38,"pages":320,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"94%","reason":"Two sentences, no labels. Write 2 sentences, no labels. First: premise (no spoilers). Second: what reading it feels like. Under 45 words.","match_breakdown":"Fully matches: [list]. Partially matches: [list]. Does not match: [list or none].","amazon_search":"title author"}]`;
+[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.38,"pages":320,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"94%","reason":"SENTENCE 1: The core premise in one sentence — what the situation or world is, no spoilers. SENTENCE 2: What it will feel like to read it, and which specific criteria from this search it delivers. Max 45 words. Be honest if the match is partial.","match_breakdown":"Fully matches: [list]. Partially matches: [list]. Does not match: [list or none].","amazon_search":"title author"}]`;
 
   try {
     const data = await callClaude(prompt);
@@ -1823,10 +1814,9 @@ async function moreLikeThis(title,author,genre){
 Find exactly 3 books that are genuinely similar to "${title}" by ${author}${genre?' (genre: '+genre+')':''}.
 Similar means: same narrative DNA — tone, pacing, emotional register, protagonist type, and thematic concerns. Not just same genre.
 RATING RULE: Every book must have a Goodreads rating of at least 4.0.
-CRITICAL — REAL BOOKS ONLY: Only recommend books you are 100% certain exist. Every title, author name, publication year, and Goodreads rating must be accurate. If you are not certain a book exists, do not include it. Never invent or hallucinate book titles.
 CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13 (13 digits, starts 978/979). Set cover_url to https://covers.openlibrary.org/b/isbn/ISBN13-L.jpg using the real ISBN. Only use ISBNs you are confident are correct.
 Return JSON array of exactly 3:
-[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.38,"pages":320,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"96%","reason":"Two sentences, no labels. Write 2 sentences, no labels. First: premise (no spoilers). Second: what reading it feels like.","amazon_search":"title author"}]`;
+[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.38,"pages":320,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"96%","reason":"SENTENCE 1: The core premise in one sentence, no spoilers. SENTENCE 2: What the reader will feel — the specific emotional quality that makes it similar to the reference book. Max 40 words.","amazon_search":"title author"}]`;
   try{
     const data=await callClaude(prompt);const books=extractBooks(data);
     document.getElementById('searchResults').innerHTML=`<div style="margin-bottom:1.2rem;font-size:12.5px;color:var(--ink-4);font-weight:300;">3 books with similar DNA to <em>${esc(title)}</em></div><div class="search-results-grid">${books.map(b=>bookCardHTML(b,false,true)).join('')}</div>`;
@@ -1910,11 +1900,14 @@ function bookCardHTML(book, showGenreFlag=false, showMatch=false) {
   const onerrorScript = `_coverFailed(this)`;
 
   return `<div class="book-card" data-title="${esc(book.title)}" data-author="${esc(book.author)}" data-genre="${esc(book.genre||'')}" data-reason="${esc(book.reason||'')}" data-isbn="${esc(isbn)}" data-cover-url="${esc(imgSrc)}" data-cover-sources="${sourcesJson}" data-cover-idx="0">
-
+  <div class="book-cover-wrap">
+    ${showGenreFlag && book.genre ? `<div class="book-genre-flag">${esc(book.genre)}</div>` : ''}
+    ${imgSrc ? `<img src="${imgSrc}" alt="${esc(book.title)}" onload="${onloadScript}" onerror="${onerrorScript}" crossorigin="anonymous">` : '<img alt="" style="display:none;">'}
+    <div class="cover-placeholder"><div class="cp-spine"></div><div class="cp-title">${esc(book.title)}</div><div class="cp-author">${esc(book.author)}</div></div>
+  </div>
   <div class="book-info">
     <div class="book-title">${esc(book.title)}</div>
     <div class="book-author">${esc(book.author)}${book.year ? ' &middot; ' + book.year : ''}</div>
-  
     <div class="book-meta">
       ${book.goodreads_rating ? `<span class="book-rating"><span class="book-star">&#9733;</span> ${book.goodreads_rating}</span>` : ''}
       ${book.pages ? `<span class="book-pages">${book.pages}p</span>` : ''}
@@ -2077,7 +2070,7 @@ function attachBookActions() {
 The reader did NOT like "${book.title}" by ${book.author}${book.genre?' ('+book.genre+')':''} — do not recommend similar books.
 NEVER recommend: ${seen.join(', ')}.
 Rating: 4.0+ required. English only.
-Return JSON array of exactly 1 object: [{"title":"title","author":"Author","genre":"Genre","year":2022,"goodreads_rating":4.3,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg using actual ISBN","reason":"Write 2 sentences, no labels. First: premise (no spoilers). Second: what reading it feels like.","amazon_search":"title author"}]`;
+Return JSON array of exactly 1 object: [{"title":"title","author":"Author","genre":"Genre","year":2022,"goodreads_rating":4.3,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg using actual ISBN","reason":"SENTENCE 1: The core premise in one sentence, no spoilers. SENTENCE 2: What it will feel like to read — the atmosphere and emotional experience. Max 40 words.","amazon_search":"title author"}]`;
             const data = await callClaude(prompt);
             const books = extractBooks(data);
             if (books[0]) {
