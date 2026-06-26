@@ -1342,7 +1342,7 @@ RULES FOR SLUMP RESCUE:
 CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13. Set cover_url to https://covers.openlibrary.org/b/isbn/ISBN13-L.jpg using the real ISBN.
 
 Return JSON array of exactly 3 objects:
-[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","slump_confidence":"Why this specific book will work for this reader right now — one sentence, direct and honest.","reason":"SENTENCE 1: The premise in one sentence, no spoilers. SENTENCE 2: What it will feel like to read — the atmosphere and emotional experience.","amazon_search":"title author"}]`;
+[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","slump_confidence":"Why this specific book will work for this reader right now — one sentence, direct and honest.","reason":"Two natural sentences. First: what the book is about (no spoilers). Second: what it feels like to read.","amazon_search":"title author"}]`;
 
   try {
     const data  = await callClaude(prompt);
@@ -1711,28 +1711,19 @@ async function loadDailyRecs(){
   const today = getTodayKey();
   const moodValue = (state.mood && state.mood.date === today) ? state.mood.value : '';
   const moodInstruction = moodValue ? `\nTODAY'S MOOD (weight picks heavily toward this — it overrides general profile preferences for today): ${moodValue}` : '';
-  const prompt=`You are a world-class literary curator with deep knowledge of Goodreads, Amazon Books, and Open Library.
+  const prompt=`You are an expert book recommender with deep knowledge of published literature.
 Reader profile: ${ctx}${seenList}${lovedCtx}${popularInstruction}${moodInstruction}
-Recommend exactly 5 real English-language books (translations included) matching this profile.
-RATING RULE: Every book must have a real Goodreads rating of at least 4.0. Aim for 4.3+ on most picks.
-ABSOLUTELY CRITICAL — REAL BOOKS ONLY:
-- Only recommend books you are 100% certain exist with these EXACT title and author
-- Every book must be findable on Amazon.com and Goodreads RIGHT NOW
-- Stick to well-known published books — bestsellers, award winners, critically acclaimed titles
-- If you are even 1% uncertain a book exists with that exact title and author, do NOT include it
-- Never invent or combine book titles
-- Preferred: books published by major publishers (Penguin, HarperCollins, Random House, Simon & Schuster, Macmillan)
-- Examples of safe books to recommend: The Midnight Library by Matt Haig, Normal People by Sally Rooney, Gone Girl by Gillian Flynn, The Name of the Wind by Patrick Rothfuss
 
-CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13. Use it to construct the cover_url.
-- ISBN-13 format: 13 digits, starts with 978 or 979, no hyphens. Example: 9780525559474
-- cover_url format: https://covers.openlibrary.org/b/isbn/ISBN13-L.jpg using the REAL ISBN-13
-- Example: for "The Midnight Library" by Matt Haig, isbn is "9780525559474", cover_url is "https://covers.openlibrary.org/b/isbn/9780525559474-L.jpg"
-- If you know the Google Books volume ID, use: https://books.google.com/books/content?id=VOLUMEID&printsec=frontcover&img=1&zoom=2
-- NEVER invent ISBNs. Only use ISBNs you are confident are correct.
+Recommend exactly 5 real books matching this reader. Every book must:
+- 100% exist and be available on Amazon and Goodreads right now with this exact title and author
+- Have a Goodreads rating of 4.0 or above
+- Be in English (translations OK)
+- Never invent titles — only well-known published books
 
-Return a JSON array of exactly 5 objects:
-[{"title":"exact title","author":"Author Name","genre":"Genre 2-3 words","year":2021,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","reason":"SENTENCE 1: The core premise in one sentence — what the world or situation is, enough to know what the book is about, zero spoilers. SENTENCE 2: What the reader will FEEL reading it — the atmosphere, emotional texture, the kind of experience it delivers. Focus on feeling, not on why we picked it. Max 45 words total. No spoilers.","loved_ref":"If this recommendation connects to a specific book the reader has finished and rated 4+ stars in their journal, name that book title here. Otherwise empty string.","amazon_search":"title author"}]`;
+For reason: 2 natural sentences. First: what the book is about (no spoilers). Second: what it feels like to read. No labels.
+
+Return ONLY a valid JSON array of exactly 5 objects:
+[{"title":"exact title","author":"Author Name","genre":"Genre","year":2021,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","reason":"Two natural sentences.","loved_ref":"","amazon_search":"title author"}]`;
   try{
     const data=await callClaude(prompt);const books=extractBooks(data);
     addBooksToHistory(books);
@@ -1776,23 +1767,21 @@ async function runSearch(){
 
   const coverInstruction = `CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13 (13 digits, starts 978/979). Set cover_url to https://covers.openlibrary.org/b/isbn/ISBN13-L.jpg. Example: "9780525559474" → "https://covers.openlibrary.org/b/isbn/9780525559474-L.jpg". Only use ISBNs you are certain are correct.`;
 
-  const prompt = `You are the world's most precise literary curator. A reader is searching for books that match a very specific set of criteria. Treat every criterion as a hard filter, not a suggestion.
+  const prompt = `You are an expert librarian and book recommender with encyclopedic knowledge of published books.
 
-SEARCH CRITERIA:
+A reader wants book recommendations matching these criteria:
 ${parts.join('\n')}
 
-RULES:
-0. REAL BOOKS ONLY: Every recommended book must exist exactly as stated. Only recommend books you are 100% certain exist on Amazon and Goodreads with that exact title and author. Stick to well-known published titles.
-1. SPECIFICITY OVER POPULARITY. Never recommend a book simply because it is well-known in the genre. Recommend it only if it genuinely satisfies the criteria above.
-2. RATING: Every book must have a real Goodreads rating of at least 4.0.
-3. HONEST PARTIAL MATCHES: If a perfect match for all criteria does not exist, say so explicitly in the reason field. Explain exactly which criteria it satisfies and which it only partially satisfies. Never pretend a book matches criteria it does not.
-4. STORYLINE IS SACRED: If a specific storyline is given, the plot situation must actually exist in the book — not be vaguely thematically related.
-5. EMOTIONAL REGISTER MUST MATCH: If specific feelings are requested, the book must reliably produce those feelings based on reader reviews — not just be in a genre that sometimes does.
-6. Only real English-language books (including English translations).
-${coverInstruction}
+YOUR RULES:
+1. ONLY recommend books that 100% exist and are available on Amazon and Goodreads right now. Use only well-known, published titles from major publishers. If uncertain a book exists, do not include it.
+2. Every book MUST match the genre exactly if specified. Dark Romance means Dark Romance only.
+3. Every book must have a Goodreads rating of 4.0 or above.
+4. Only English-language books or English translations.
+5. For the reason: write 2 natural sentences. First: what the book is about (no spoilers). Second: what it feels like to read. No labels or prefixes.
+6. For match_breakdown: honestly state what criteria this book satisfies.
 
-Return a JSON array of exactly 3 objects. Each must have a "match_breakdown" field that honestly lists which criteria it fully satisfies, which it partially satisfies, and which it does not satisfy:
-[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.38,"pages":320,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"94%","reason":"SENTENCE 1: The core premise in one sentence — what the situation or world is, no spoilers. SENTENCE 2: What it will feel like to read it, and which specific criteria from this search it delivers. Max 45 words. Be honest if the match is partial.","match_breakdown":"Fully matches: [list]. Partially matches: [list]. Does not match: [list or none].","amazon_search":"title author"}]`;
+Return ONLY a valid JSON array of exactly 3 books:
+[{"title":"exact published title","author":"exact author name","genre":"Genre","year":2020,"goodreads_rating":4.2,"pages":350,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"95%","reason":"Two natural sentences about the book and how it feels to read.","match_breakdown":"Fully matches: genre, emotional tone. Partially matches: pacing.","amazon_search":"title author"}]`;
 
   try {
     const data = await callClaude(prompt);
@@ -1823,7 +1812,7 @@ Similar means: same narrative DNA — tone, pacing, emotional register, protagon
 RATING RULE: Every book must have a Goodreads rating of at least 4.0.
 CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13 (13 digits, starts 978/979). Set cover_url to https://covers.openlibrary.org/b/isbn/ISBN13-L.jpg using the real ISBN. Only use ISBNs you are confident are correct.
 Return JSON array of exactly 3:
-[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.38,"pages":320,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"96%","reason":"SENTENCE 1: The core premise in one sentence, no spoilers. SENTENCE 2: What the reader will feel — the specific emotional quality that makes it similar to the reference book. Max 40 words.","amazon_search":"title author"}]`;
+[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.38,"pages":320,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"96%","reason":"Two natural sentences. First: what the book is about (no spoilers). Second: what it feels like to read.","amazon_search":"title author"}]`;
   try{
     const data=await callClaude(prompt);const books=extractBooks(data);
     document.getElementById('searchResults').innerHTML=`<div style="margin-bottom:1.2rem;font-size:12.5px;color:var(--ink-4);font-weight:300;">3 books with similar DNA to <em>${esc(title)}</em></div><div class="search-results-grid">${books.map(b=>bookCardHTML(b,false,true)).join('')}</div>`;
@@ -2077,7 +2066,7 @@ function attachBookActions() {
 The reader did NOT like "${book.title}" by ${book.author}${book.genre?' ('+book.genre+')':''} — do not recommend similar books.
 NEVER recommend: ${seen.join(', ')}.
 Rating: 4.0+ required. English only.
-Return JSON array of exactly 1 object: [{"title":"title","author":"Author","genre":"Genre","year":2022,"goodreads_rating":4.3,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg using actual ISBN","reason":"SENTENCE 1: The core premise in one sentence, no spoilers. SENTENCE 2: What it will feel like to read — the atmosphere and emotional experience. Max 40 words.","amazon_search":"title author"}]`;
+Return JSON array of exactly 1 object: [{"title":"title","author":"Author","genre":"Genre","year":2022,"goodreads_rating":4.3,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg using actual ISBN","reason":"Two natural sentences. First: what the book is about (no spoilers). Second: what it feels like to read.","amazon_search":"title author"}]`;
             const data = await callClaude(prompt);
             const books = extractBooks(data);
             if (books[0]) {
