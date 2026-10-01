@@ -1682,8 +1682,10 @@ async function callClaude(prompt){
   return res.json();
 }
 function extractBooks(data){
-  const text=data?.choices?.[0]?.message?.content||'';
+  let text=data?.choices?.[0]?.message?.content||'';
   if(!text)throw new Error('No response received');
+  // strip <think>...</think> reasoning blocks
+  text=text.replace(/<think>[\s\S]*?<\/think>/g,'').trim();
   const clean=text.replace(/```json|```/g,'').trim();
   const s=clean.indexOf('['),e=clean.lastIndexOf(']');
   if(s===-1||e===-1)throw new Error('Invalid response format');
