@@ -1662,14 +1662,14 @@ function getLovedBooks() {
 }
 /* ── AI API ─────────────────────────────────────────────────────────
    Gemini 1.5 Flash (free tier)                                       */
-const GROQ_API_KEY = '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';
+const OPENROUTER_API_KEY = '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';
 
 async function callClaude(prompt){
-  const key = GROQ_API_KEY;
+  const key = OPENROUTER_API_KEY;
   if(!key){ showToast('No API key configured'); throw new Error('No API key'); }
-  const url = 'https://api.groq.com/openai/v1/chat/completions';
+  const url = 'https://openrouter.ai/api/v1/chat/completions';
   const body = {
-    model: 'llama3-groq-70b-8192-tool-use-preview',
+    model: 'meta-llama/llama-3.1-8b-instruct:free',
     messages: [
       {role:'system', content:'You are a literary expert. Respond ONLY with a valid JSON array. No markdown, no backticks, no preamble. Start with [ and end with ].'},
       {role:'user', content: prompt}
@@ -1686,10 +1686,12 @@ function extractBooks(data){
   if(!text)throw new Error('No response received');
   // strip <think>...</think> reasoning blocks
   text=text.replace(/<think>[\s\S]*?<\/think>/g,'').trim();
-  const clean=text.replace(/```json|```/g,'').trim();
-  const s=clean.indexOf('['),e=clean.lastIndexOf(']');
+  // strip markdown code fences
+  text=text.replace(/```[\w]*\n?/g,'').trim();
+  const s=text.indexOf('['),e=text.lastIndexOf(']');
   if(s===-1||e===-1)throw new Error('Invalid response format');
-  return JSON.parse(clean.substring(s,e+1));
+  try{ return JSON.parse(text.substring(s,e+1)); }
+  catch(err){ throw new Error('JSON parse error: '+err.message); }
 }
 
 function showSkeletons(id,n){document.getElementById(id).innerHTML=Array(n).fill(`<div class="skeleton-card"><div class="skeleton-cover sk-pulse"></div><div class="skeleton-info"><div class="skeleton-line sk-pulse" style="width:75%"></div><div class="skeleton-line sk-pulse" style="width:50%"></div><div class="skeleton-line sk-pulse" style="width:65%"></div></div></div>`).join('');}
