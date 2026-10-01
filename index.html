@@ -1661,7 +1661,7 @@ function getLovedBooks() {
     .map(e => e.title + (e.author ? ' by ' + e.author : ''));
 }
 /* ── AI API ─────────────────────────────────────────────────────────
-   Paste your free Gemini key below (get it at aistudio.google.com)  */
+   Gemini 1.5 Flash (free tier)                                       */
 const GROQ_API_KEY = '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';
 
 async function callClaude(prompt){
@@ -1669,7 +1669,7 @@ async function callClaude(prompt){
   if(!key){ showToast('No API key configured'); throw new Error('No API key'); }
   const url = 'https://api.groq.com/openai/v1/chat/completions';
   const body = {
-    model: 'qwen/qwen3.6-27b',
+    model: 'openai/gpt-oss-120b',
     messages: [
       {role:'system', content:'You are a literary expert. Respond ONLY with a valid JSON array. No markdown, no backticks, no preamble. Start with [ and end with ].'},
       {role:'user', content: prompt}
