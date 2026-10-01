@@ -1669,7 +1669,7 @@ async function callClaude(prompt){
   if(!key){ showToast('No API key configured'); throw new Error('No API key'); }
   const url = 'https://openrouter.ai/api/v1/chat/completions';
   const body = {
-    model: 'meta-llama/llama-3.1-8b-instruct:free',
+    model: 'mistralai/mistral-7b-instruct:free',
     messages: [
       {role:'system', content:'You are a literary expert. Respond ONLY with a valid JSON array. No markdown, no backticks, no preamble. Start with [ and end with ].'},
       {role:'user', content: prompt}
@@ -1682,12 +1682,14 @@ async function callClaude(prompt){
   return res.json();
 }
 function extractBooks(data){
-  let text=data?.choices?.[0]?.message?.content||data?.choices?.[0]?.message?.reasoning||'';
+  let text=data?.choices?.[0]?.message?.content||'';
   if(!text)throw new Error('No response received');
+  console.log('RAW API RESPONSE:', text.substring(0,300));
   // strip <think>...</think> reasoning blocks
   text=text.replace(/<think>[\s\S]*?<\/think>/g,'').trim();
-  // strip markdown code fences
-  text=text.replace(/```[\w]*\n?/g,'').trim();
+  // strip markdown code fences (```json ... ``` or ``` ... ```)
+  text=text.replace(/```(?:json)?\s*/g,'').replace(/```/g,'').trim();
+  // find the JSON array
   const s=text.indexOf('['),e=text.lastIndexOf(']');
   if(s===-1||e===-1)throw new Error('Invalid response format');
   try{ return JSON.parse(text.substring(s,e+1)); }
