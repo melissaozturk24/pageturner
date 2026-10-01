@@ -1662,27 +1662,22 @@ function getLovedBooks() {
 }
 /* ── AI API ─────────────────────────────────────────────────────────
    Gemini 1.5 Flash (free tier)                                       */
-const OPENROUTER_API_KEY = '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';
+const GEMINI_API_KEY = 'AIzaSyBzjRjwCWRGqurAhC6yYUTlTm4pegOjEdQ';
 
 async function callClaude(prompt){
-  const key = OPENROUTER_API_KEY;
+  const key = GEMINI_API_KEY;
   if(!key){ showToast('No API key configured'); throw new Error('No API key'); }
-  const url = 'https://openrouter.ai/api/v1/chat/completions';
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='+key;
   const body = {
-    model: 'mistralai/mistral-7b-instruct:free',
-    messages: [
-      {role:'system', content:'You are a literary expert. Respond ONLY with a valid JSON array. No markdown, no backticks, no preamble. Start with [ and end with ].'},
-      {role:'user', content: prompt}
-    ],
-    temperature: 0.7,
-    max_tokens: 2048
+    contents:[{parts:[{text: 'You are a literary expert. Respond ONLY with a valid JSON array. No markdown, no backticks, no preamble. Start with [ and end with ].\n\n'+prompt}]}],
+    generationConfig:{temperature:0.7,maxOutputTokens:2048}
   };
-  const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify(body)});
+  const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error?.message||'API error '+res.status);}
   return res.json();
 }
 function extractBooks(data){
-  let text=data?.choices?.[0]?.message?.content||'';
+  let text=data?.candidates?.[0]?.content?.parts?.[0]?.text||data?.choices?.[0]?.message?.content||'';
   if(!text)throw new Error('No response received');
   console.log('RAW API RESPONSE:', text.substring(0,300));
   // strip <think>...</think> reasoning blocks
