@@ -1669,7 +1669,7 @@ async function callClaude(prompt){
   if(!key){ showToast('No API key configured'); throw new Error('No API key'); }
   const url = 'https://api.groq.com/openai/v1/chat/completions';
   const body = {
-    model: 'llama-3.3-70b-versatile',
+    model: 'llama3-70b-8192',
     messages: [
       {role:'system', content:'You are a literary expert. Respond ONLY with a valid JSON array. No markdown, no backticks, no preamble. Start with [ and end with ].'},
       {role:'user', content: prompt}
