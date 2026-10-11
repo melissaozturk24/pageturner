@@ -1660,35 +1660,66 @@ function getLovedBooks() {
     .filter(e => e.rating >= 4)
     .map(e => e.title + (e.author ? ' by ' + e.author : ''));
 }
-/* ── AI API ─────────────────────────────────────────────────────────
-   Gemini 1.5 Flash (free tier)                                       */
-const GEMINI_API_KEY = 'AIzaSyBzjRjwCWRGqurAhC6yYUTlTm4pegOjEdQ';
+const GEMINI_MODEL = 'gemini-flash-latest';
+
+function getGeminiKey(){
+  let key = '';
+  try { key = localStorage.getItem('pt_gemini_key') || ''; } catch(e) {}
+  if(!key){
+    key = (prompt('Paste your Google AI Studio API key (starts with "AIza"). It is stored only in this browser.') || '').trim();
+    if(key){ try { localStorage.setItem('pt_gemini_key', key); } catch(e) {} }
+  }
+  return key;
+}
 
 async function callClaude(prompt){
-  const key = GEMINI_API_KEY;
+  const key = getGeminiKey();
   if(!key){ showToast('No API key configured'); throw new Error('No API key'); }
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='+key;
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/'+GEMINI_MODEL+':generateContent';
   const body = {
-    contents:[{parts:[{text: 'You are a literary expert. Respond ONLY with a valid JSON array. No markdown, no backticks, no preamble. Start with [ and end with ].\n\n'+prompt}]}],
-    generationConfig:{temperature:0.7,maxOutputTokens:2048}
+    systemInstruction:{parts:[{text:'You are a literary expert. Respond ONLY with a valid JSON array. No markdown, no backticks, no preamble. Start with [ and end with ].'}]},
+    contents:[{role:'user',parts:[{text:prompt}]}],
+    generationConfig:{temperature:0.7,maxOutputTokens:8192,responseMimeType:'application/json'}
   };
-  const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error?.message||'API error '+res.status);}
+  let res;
+  try {
+    res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify(body)});
+  } catch(err) {
+    throw new Error('Network error reaching Gemini (offline or blocked by an extension)');
+  }
+  if(!res.ok){
+    const e = await res.json().catch(()=>({}));
+    const msg = e.error?.message || 'API error '+res.status;
+    if(res.status===400 && /API key/i.test(msg) || res.status===403){
+      try { localStorage.removeItem('pt_gemini_key'); } catch(_) {}
+    }
+    throw new Error(msg);
+  }
   return res.json();
 }
+
 function extractBooks(data){
-  let text=data?.candidates?.[0]?.content?.parts?.[0]?.text||data?.choices?.[0]?.message?.content||'';
-  if(!text)throw new Error('No response received');
-  console.log('RAW API RESPONSE:', text.substring(0,300));
-  // strip <think>...</think> reasoning blocks
-  text=text.replace(/<think>[\s\S]*?<\/think>/g,'').trim();
-  // strip markdown code fences (```json ... ``` or ``` ... ```)
-  text=text.replace(/```(?:json)?\s*/g,'').replace(/```/g,'').trim();
-  // find the JSON array
-  const s=text.indexOf('['),e=text.lastIndexOf(']');
-  if(s===-1||e===-1)throw new Error('Invalid response format');
-  try{ return JSON.parse(text.substring(s,e+1)); }
-  catch(err){ throw new Error('JSON parse error: '+err.message); }
+  const block = data?.promptFeedback?.blockReason;
+  if(block) throw new Error('Request blocked by Gemini ('+block+')');
+  const cand = data?.candidates?.[0];
+  let text = (cand?.content?.parts||[]).filter(p=>!p.thought).map(p=>p.text||'').join('').trim();
+  if(!text){
+    throw new Error(cand?.finishReason ? 'Empty response (finishReason: '+cand.finishReason+')' : 'No response received');
+  }
+  text = text.replace(/```(?:json)?\s*/g,'').replace(/```/g,'').trim();
+  let parsed;
+  try { parsed = JSON.parse(text); }
+  catch(_) {
+    const s=text.indexOf('['), e=text.lastIndexOf(']');
+    if(s===-1||e<=s) throw new Error(cand?.finishReason==='MAX_TOKENS' ? 'Response was cut off (MAX_TOKENS)' : 'Invalid response format');
+    try { parsed = JSON.parse(text.substring(s,e+1)); }
+    catch(err){ throw new Error('JSON parse error: '+err.message); }
+  }
+  if(!Array.isArray(parsed) && parsed && typeof parsed==='object'){
+    parsed = Object.values(parsed).find(Array.isArray) || [parsed];
+  }
+  if(!Array.isArray(parsed)) throw new Error('Invalid response format');
+  return parsed;
 }
 
 function showSkeletons(id,n){document.getElementById(id).innerHTML=Array(n).fill(`<div class="skeleton-card"><div class="skeleton-cover sk-pulse"></div><div class="skeleton-info"><div class="skeleton-line sk-pulse" style="width:75%"></div><div class="skeleton-line sk-pulse" style="width:50%"></div><div class="skeleton-line sk-pulse" style="width:65%"></div></div></div>`).join('');}
