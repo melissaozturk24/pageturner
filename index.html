@@ -1661,7 +1661,7 @@ function getLovedBooks() {
     .map(e => e.title + (e.author ? ' by ' + e.author : ''));
 }
 // Cloudflare Worker in proxy/ — it holds the Gemini key, so users don't need one.
-const PROXY_URL = 'https://pageturner-proxy.REPLACE_WITH_SUBDOMAIN.workers.dev';
+const PROXY_URL = 'https://pageturner-proxy.melissaozturk24.workers.dev';
 
 async function callClaude(prompt){
   const body = {
