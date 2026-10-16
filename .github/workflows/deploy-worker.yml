@@ -23,7 +23,8 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 90a31557c4acc8476defb30916b4d6d1
-        run: wrangler deploy
+        run: |
+          wrangler deploy --verbose 2>&1
 
       - name: Set GEMINI_API_KEY secret
         working-directory: proxy
