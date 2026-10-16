@@ -1660,22 +1660,10 @@ function getLovedBooks() {
     .filter(e => e.rating >= 4)
     .map(e => e.title + (e.author ? ' by ' + e.author : ''));
 }
-const GEMINI_MODEL = 'gemini-flash-latest';
-
-function getGeminiKey(){
-  let key = '';
-  try { key = localStorage.getItem('pt_gemini_key') || ''; } catch(e) {}
-  if(!key){
-    key = (prompt('Paste your Google AI Studio API key (starts with "AIza"). It is stored only in this browser.') || '').trim();
-    if(key){ try { localStorage.setItem('pt_gemini_key', key); } catch(e) {} }
-  }
-  return key;
-}
+// Cloudflare Worker in proxy/ — it holds the Gemini key, so users don't need one.
+const PROXY_URL = 'https://pageturner-proxy.melissaozturk24.workers.dev';
 
 async function callClaude(prompt){
-  const key = getGeminiKey();
-  if(!key){ showToast('No API key configured'); throw new Error('No API key'); }
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/'+GEMINI_MODEL+':generateContent';
   const body = {
     systemInstruction:{parts:[{text:'You are a literary expert. Respond ONLY with a valid JSON array. No markdown, no backticks, no preamble. Start with [ and end with ].'}]},
     contents:[{role:'user',parts:[{text:prompt}]}],
@@ -1683,17 +1671,13 @@ async function callClaude(prompt){
   };
   let res;
   try {
-    res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify(body)});
+    res = await fetch(PROXY_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   } catch(err) {
-    throw new Error('Network error reaching Gemini (offline or blocked by an extension)');
+    throw new Error('Network error reaching the recommendation service');
   }
   if(!res.ok){
     const e = await res.json().catch(()=>({}));
-    const msg = e.error?.message || 'API error '+res.status;
-    if(res.status===400 && /API key/i.test(msg) || res.status===403){
-      try { localStorage.removeItem('pt_gemini_key'); } catch(_) {}
-    }
-    throw new Error(msg);
+    throw new Error(e.error?.message || 'API error '+res.status);
   }
   return res.json();
 }
