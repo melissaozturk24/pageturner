@@ -54,7 +54,7 @@ export default {
     try {
       upstream = await fetch(GEMINI_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY.trim() },
         body: JSON.stringify(forward),
       });
     } catch {

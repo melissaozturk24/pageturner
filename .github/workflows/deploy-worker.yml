@@ -3,7 +3,7 @@ name: Deploy Cloudflare Worker
 on:
   push:
     branches:
-      - claude/confident-cori-fbbeot
+      - main
     paths:
       - 'proxy/**'
       - '.github/workflows/deploy-worker.yml'
@@ -50,7 +50,21 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 90a31557c4acc8476defb30916b4d6d1
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: echo "$GEMINI_API_KEY" | wrangler secret put GEMINI_API_KEY
+        run: printf '%s' "$GEMINI_API_KEY" | wrangler secret put GEMINI_API_KEY
 
-      - name: Output Worker URL
-        run: echo "Worker deployed at https://pageturner-proxy.melissaozturk24.workers.dev"
+      - name: Smoke test Worker and site
+        run: |
+          sleep 5
+          url=https://pageturner-proxy.melissaozturk24.workers.dev
+          code=$(curl -s -o resp.json -w '%{http_code}' -X POST "$url" \
+            -H 'Origin: https://melissaozturk24.github.io' -H 'Content-Type: application/json' \
+            -d '{"contents":[{"parts":[{"text":"Reply with the JSON array [\"ok\"]"}]}],"generationConfig":{"responseMimeType":"application/json"}}')
+          echo "Worker POST status: $code"
+          head -c 600 resp.json; echo
+          [ "$code" = 200 ] && grep -q '"candidates"' resp.json || { echo "::error::Worker did not return a Gemini response"; exit 1; }
+          blocked=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$url" -H 'Origin: https://example.com' -d '{}')
+          echo "Other-origin POST status: $blocked"
+          [ "$blocked" = 403 ] || { echo "::error::Worker did not block another origin"; exit 1; }
+          site=$(curl -sL https://melissaozturk24.github.io/pageturner/)
+          echo "$site" | grep -q "const PROXY_URL = '$url'" || { echo "::error::Live site is not using the Worker URL"; exit 1; }
+          echo "Live site uses $url"
