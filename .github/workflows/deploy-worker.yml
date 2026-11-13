@@ -64,10 +64,10 @@ jobs:
         run: |
           sleep 5
           url=https://pageturner-proxy.melissaozturk24.workers.dev
-          code=$(curl -s -o resp.json -w '%{http_code}' -X POST "$url" \
+          code=$(curl -s -D headers.txt -o resp.json -w '%{http_code}' -X POST "$url" \
             -H 'Origin: https://melissaozturk24.github.io' -H 'Content-Type: application/json' \
             -d '{"contents":[{"parts":[{"text":"Reply with the JSON array [\"ok\"]"}]}],"generationConfig":{"responseMimeType":"application/json"}}')
-          echo "Worker POST status: $code"
+          echo "Worker POST status: $code (model: $(grep -i '^x-gemini-model' headers.txt | cut -d' ' -f2 | tr -d '\r'))"
           head -c 600 resp.json; echo
           [ "$code" = 200 ] && grep -q '"candidates"' resp.json || { echo "::error::Worker did not return a Gemini response"; exit 1; }
           blocked=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$url" -H 'Origin: https://example.com' -d '{}')
