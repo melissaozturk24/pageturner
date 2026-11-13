@@ -10,7 +10,7 @@ const MAX_BODY_BYTES = 64 * 1024;
 const corsHeaders = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Test-Models',
   'Access-Control-Max-Age': '86400',
   'Vary': 'Origin',
 };
@@ -55,27 +55,35 @@ export default {
     };
 
     const payload = JSON.stringify(forward);
-    let upstream;
-    let usedModel = '';
-    for (const model of GEMINI_MODELS) {
+    // TEMPORARY (measurement build): force a model order with X-Test-Models, report every attempt.
+    const ALL = ['gemini-3.8-flash','gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite'];
+    const forced = (request.headers.get('X-Test-Models') || '').split(',').map(x => x.trim()).filter(x => ALL.includes(x));
+    const order = forced.length ? forced : GEMINI_MODELS;
+    const attempts = [];
+    let upstream = null, usedModel = '';
+    for (const model of order) {
+      const t0 = Date.now();
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 60000);
       try {
         upstream = await fetch(geminiUrl(model), {
-          method: 'POST',
+          method: 'POST', signal: ctl.signal,
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY.trim() },
           body: payload,
         });
-      } catch {
-        upstream = null;
-        continue;
+        const text = await upstream.text();
+        clearTimeout(timer);
+        attempts.push(model + ':' + upstream.status + ':' + (Date.now() - t0));
+        upstream = { status: upstream.status, text };
+      } catch (e) {
+        clearTimeout(timer);
+        attempts.push(model + ':' + (e.name === 'AbortError' ? 'timeout' : 'neterr') + ':' + (Date.now() - t0));
+        upstream = null; continue;
       }
       if (!RETRY_STATUSES.includes(upstream.status)) { usedModel = model; break; }
     }
-    if (!upstream) {
-      return json({ error: { message: 'Could not reach Gemini' } }, 502);
-    }
-    return new Response(upstream.body, {
-      status: upstream.status,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'X-Gemini-Model': usedModel || 'none' },
-    });
+    const hdr = { ...corsHeaders, 'Content-Type': 'application/json', 'X-Gemini-Model': usedModel || 'none', 'X-Gemini-Attempts': attempts.join(','), 'Access-Control-Expose-Headers': 'X-Gemini-Model, X-Gemini-Attempts' };
+    if (!upstream) return new Response(JSON.stringify({ error: { message: 'Could not reach Gemini' } }), { status: 502, headers: hdr });
+    return new Response(upstream.text, { status: upstream.status, headers: hdr });
   },
 };
