@@ -34,6 +34,14 @@ jobs:
           echo "Cloudflare token status: $status"
           [ "$status" = "active" ] || { echo "::error::Cloudflare token is not active"; exit 1; }
 
+      - name: List available Gemini Flash models
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          curl -s "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000" \
+            -H "x-goog-api-key: $(printf '%s' "$GEMINI_API_KEY" | tr -d '[:space:]')" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); [print(m['name'], '|', m.get('displayName',''), '|', m.get('version','')) for m in d.get('models',[]) if 'flash' in m['name'] and 'generateContent' in m.get('supportedGenerationMethods',[])] or print(d.get('error'))"
+
       - name: Install Wrangler
         run: npm install -g wrangler
 
