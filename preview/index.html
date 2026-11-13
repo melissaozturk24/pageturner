@@ -164,6 +164,20 @@ main{max-width:1140px;margin:0 auto;padding:2.5rem 2rem;}
 .sk-pulse{animation:skP 1.6s ease-in-out infinite;}
 @keyframes skP{0%,100%{opacity:.45}50%{opacity:1}}
 
+/* Loading line, friendly errors, "Try again" */
+.load-status{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--ink-3);padding:10px 14px;background:var(--surf-2);border:1px solid var(--border);border-radius:10px;margin-bottom:1.2rem;grid-column:1/-1;}
+.load-status[hidden]{display:none;}
+.spinner{width:14px;height:14px;border:2px solid var(--border-2);border-top-color:var(--pink-dark);border-radius:50%;animation:ptSpin .8s linear infinite;flex-shrink:0;}
+@keyframes ptSpin{to{transform:rotate(360deg)}}
+.load-status.is-error{background:var(--pink-light);border-color:var(--pink-mid);color:var(--ink-2);justify-content:space-between;flex-wrap:wrap;}
+.load-status.is-error strong{font-weight:500;color:var(--ink);}
+.error-box{grid-column:1/-1;text-align:center;padding:2.6rem 1.5rem;background:var(--surf-2);border:1px solid var(--border);border-radius:14px;}
+.error-box .empty-title{margin-bottom:.4rem;}
+.error-box .empty-sub{margin-bottom:1.2rem;}
+.retry-btn{padding:10px 22px;font-size:13px;}
+.retry-link{background:none;border:none;cursor:pointer;color:var(--pink-dark);font:500 12px 'Inter',sans-serif;text-decoration:underline;padding:0;}
+.books-grid.is-refreshing{opacity:.5;pointer-events:none;transition:opacity .2s;}
+
 /* SEARCH */
 .search-panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:2rem;margin-bottom:2rem;box-shadow:var(--sh-sm);}
 .search-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem;margin-bottom:1.2rem;}
@@ -515,6 +529,7 @@ main{max-width:1140px;margin:0 auto;padding:2.5rem 2rem;}
       </div>
       <button class="section-action" onclick="loadDailyRecs()" id="refreshBtn">Refresh</button>
     </div>
+    <div class="load-status" id="dailyStatus" role="status" aria-live="polite" hidden></div>
     <div class="books-grid" id="dailyBooks"></div>
   </main>
 </div>
@@ -1034,6 +1049,7 @@ main{max-width:1140px;margin:0 auto;padding:2.5rem 2rem;}
         <div style="font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:400;color:var(--ink);margin-bottom:4px;">Books to get you reading again</div>
         <div style="font-size:12.5px;color:var(--ink-4);font-weight:300;">Chosen for where you are right now — not your profile, not popularity.</div>
       </div>
+      <div class="load-status" id="slumpStatus" role="status" aria-live="polite" hidden></div>
       <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:1.4rem;" id="slumpBooks"></div>
       <div style="text-align:center;margin-top:2rem;">
         <button class="btn-ghost" onclick="resetSlump()" style="font-size:13px;">Try different answers</button>
@@ -1324,6 +1340,8 @@ function resetSlump() {
   document.getElementById('slump-loved').value = '';
   document.getElementById('slump-avoid-free').value = '';
   document.querySelectorAll('#slumpAvoidTags .tag-pill, #slumpMoodTags .tag-pill').forEach(p => p.classList.remove('active'));
+  if (_slumpCtl) _slumpCtl.abort();
+  hideLine(document.getElementById('slumpStatus'));
   document.getElementById('slumpResults').style.display = 'none';
   document.getElementById('slump-q1').style.display = 'block';
   document.getElementById('slump-q2').style.display = 'none';
@@ -1340,13 +1358,9 @@ async function runSlumpRescue() {
 
   if (!mood) { showToast('Please select what you are looking for right now'); return; }
 
-  const btn = document.getElementById('slumpBtn');
-  btn.disabled = true; btn.textContent = 'Finding...';
-
-  // Hide questions, show loading state in results area
+  // Hide questions, show the results area
   document.getElementById('slump-q3').style.display = 'none';
   document.getElementById('slumpResults').style.display = 'block';
-  document.getElementById('slumpBooks').innerHTML = Array(3).fill(`<div class="skeleton-card"><div class="skeleton-cover sk-pulse"></div><div class="skeleton-info"><div class="skeleton-line sk-pulse" style="width:80%"></div><div class="skeleton-line sk-pulse" style="width:55%"></div><div class="skeleton-line sk-pulse" style="width:70%"></div></div></div>`).join('');
 
   const avoidList = [...avoidTags, avoidFree].filter(Boolean).join(', ');
   const profileCtx = buildProfileContext();
@@ -1377,17 +1391,36 @@ CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13. Set cover_url to 
 Return JSON array of exactly 3 objects:
 [{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","slump_confidence":"Why this specific book will work for this reader right now — one sentence, direct and honest.","reason":"SENTENCE 1: The premise in one sentence, no spoilers. SENTENCE 2: What it will feel like to read — the atmosphere and emotional experience.","amazon_search":"title author"}]`;
 
+  doSlumpRescue(prompt);
+}
+let _slumpCtl = null, _slumpSeq = 0;
+async function doSlumpRescue(prompt){
+  if (_slumpCtl) _slumpCtl.abort();
+  const ctl = new AbortController(); _slumpCtl = ctl;
+  const seq = ++_slumpSeq;
+  const booksEl = document.getElementById('slumpBooks');
+  const statusEl = document.getElementById('slumpStatus');
+  const btn = document.getElementById('slumpBtn');
+  btn.disabled = true; btn.textContent = 'Finding...';
+  booksEl.innerHTML = skeletonGrid(3);
+  const stopSlow = showLoadingLine(statusEl, 'Finding books to get you reading again…');
   try {
-    const data  = await callClaude(prompt);
+    const data  = await callClaude(prompt, {signal: ctl.signal});
     const books = extractBooks(data);
+    if (seq !== _slumpSeq) return;
+    hideLine(statusEl);
     // Render using bookCardHTML but show slump_confidence as a special badge
-    document.getElementById('slumpBooks').innerHTML = books.map(b => slumpCardHTML(b)).join('');
+    booksEl.innerHTML = books.map(b => slumpCardHTML(b)).join('');
     attachBookActions();
   } catch(e) {
-    console.error(e);
-    document.getElementById('slumpBooks').innerHTML = `<div class="empty-state"><div class="empty-title">Could not load recommendations</div><div class="empty-sub">${e.message || 'Please try again'}</div></div>`;
+    if (seq !== _slumpSeq || (e && e.kind === 'cancelled')) return;
+    logRequestError('get unstuck', e);
+    hideLine(statusEl);
+    renderErrorBox(booksEl, e, () => doSlumpRescue(prompt));
+  } finally {
+    stopSlow();
+    if (seq === _slumpSeq) { btn.disabled = false; btn.textContent = 'Find my books'; _slumpCtl = null; }
   }
-  btn.disabled = false; btn.textContent = 'Find my books';
 }
 
 function slumpCardHTML(book) {
@@ -1550,12 +1583,13 @@ function updateOnboardUI(){
   document.querySelectorAll('.modal-step').forEach((el,i)=>el.classList.toggle('active',i+1===onboardStep));
   document.querySelectorAll('.step-dot').forEach((el,i)=>el.classList.toggle('active',i+1===onboardStep));
   document.getElementById('ob-next').textContent = onboardStep===TOTAL_ONBOARD_STEPS?'Start reading':'Continue';
+  // Step 4 shows a live preview: load it as soon as the step opens.
+  if(onboardStep===4) loadOnboardPreview();
 }
 document.getElementById('ob-next').addEventListener('click',()=>{
   if(onboardStep===1) state.profile.genres=[...document.querySelectorAll('#onboard-genres .genre-chip.selected')].map(c=>c.dataset.val);
   if(onboardStep===2){state.profile.favBooks=document.getElementById('fav-books').value;state.profile.avoidThemes=document.getElementById('avoid-stuff').value?[document.getElementById('avoid-stuff').value]:[];}
   if(onboardStep===3){const l=document.querySelector('#onboard-length .tag-pill.active');const t=document.querySelector('#onboard-tone .tag-pill.active');const p=document.querySelector('#onboard-pace .tag-pill.active');if(l)state.profile.length=l.dataset.val;if(t)state.profile.tone=t.dataset.val;if(p)state.profile.pace=p.dataset.val;}
-  if(onboardStep===4){loadOnboardPreview();onboardStep++;updateOnboardUI();return;}
   if(onboardStep===TOTAL_ONBOARD_STEPS){const n=document.getElementById('ob-name').value;const e=document.getElementById('ob-email').value;if(n||e){state.user={name:n||'Reader',email:e};}finishOnboard();return;}
   onboardStep++;updateOnboardUI();
 });
@@ -1567,10 +1601,14 @@ document.querySelectorAll('#onboard-genres .genre-chip').forEach(c=>c.addEventLi
 });
 
 /* Instant preview during onboarding */
+let _obSeq = 0;
 async function loadOnboardPreview() {
+  const seq = ++_obSeq;
   const loadEl=document.getElementById('obPreviewLoading');
   const booksEl=document.getElementById('obPreviewBooks');
   loadEl.style.display='block'; booksEl.style.display='none';
+  loadEl.textContent='Finding your books...';
+  const slowTimer=setTimeout(()=>{ if(seq===_obSeq) loadEl.textContent=SLOW_TEXT+'...'; }, SLOW_NOTICE_MS);
   const genres = [...document.querySelectorAll('#onboard-genres .genre-chip.selected')].map(c=>c.dataset.val);
   const favs = document.getElementById('fav-books').value;
   const ctx = (genres.length?`Genres: ${genres.join(', ')}. `:'') + (favs?`Loved: ${favs}. `:'');
@@ -1582,6 +1620,7 @@ Use real ISBNs. No markdown.`;
   try {
     const data = await callClaude(prompt);
     const books = extractBooks(data);
+    if (seq !== _obSeq) return;
     booksEl.innerHTML = books.slice(0,4).map(b=>{
       const src=(b.cover_url&&b.cover_url.startsWith('http'))?b.cover_url:(b.isbn&&b.isbn.length>=10?'https://covers.openlibrary.org/b/isbn/'+b.isbn+'-M.jpg':'');
       const onld=`if(this.naturalWidth>20&&this.naturalHeight>30){this.classList.add('cover-visible');var p=this.parentNode.querySelector('.ob-preview-cover-ph');if(p)p.classList.add('hidden');}`;
@@ -1595,7 +1634,15 @@ Use real ISBNs. No markdown.`;
       </div>`;
     }).join('');
     loadEl.style.display='none'; booksEl.style.display='flex';
-  } catch(e) { loadEl.textContent='Could not load preview — your picks are ready once you finish.'; }
+  } catch(e) {
+    if (seq !== _obSeq) return;
+    logRequestError('onboarding preview', e);
+    const m = friendlyError(e);
+    loadEl.innerHTML = `${esc(m.title)}. You can still finish — your picks will load after. <button class="retry-link" type="button">Try again</button>`;
+    loadEl.querySelector('.retry-link').addEventListener('click', loadOnboardPreview);
+  } finally {
+    clearTimeout(slowTimer);
+  }
 }
 
 /* ── PROFILE PAGE ──────────────────────────────────────────────────── */
@@ -1708,24 +1755,79 @@ if(IS_PREVIEW){
   });
 }
 
-async function callClaude(prompt){
+/* ── REQUESTS: time limit, cancelling, friendly errors ─────────────── */
+// The Worker gives up after 50s; the browser stops waiting after 60s, so nothing can load forever.
+const REQUEST_TIMEOUT_MS = 60000;
+const SLOW_NOTICE_MS = 10000;
+const SLOW_TEXT = 'Still looking — this can take up to a minute';
+
+class RequestError extends Error {
+  // kind: 'timeout' | 'busy' | 'offline' | 'network' | 'cancelled' | 'bad_output'
+  constructor(kind, detail){ super(detail || kind); this.kind = kind; }
+}
+
+async function callClaude(prompt, opts = {}){
   const body = {
     systemInstruction:{parts:[{text:'You are a literary expert. Respond ONLY with a valid JSON array. No markdown, no backticks, no preamble. Start with [ and end with ].'}]},
     contents:[{role:'user',parts:[{text:prompt}]}],
     generationConfig:{temperature:0.7,maxOutputTokens:8192,responseMimeType:'application/json'}
   };
-  let res;
+  const ctl = new AbortController();
+  let why = '';
+  const timer = setTimeout(() => { why = 'timeout'; ctl.abort(); }, opts.timeoutMs || REQUEST_TIMEOUT_MS);
+  const onCancel = () => { why = why || 'cancelled'; ctl.abort(); };
+  if (opts.signal) { if (opts.signal.aborted) onCancel(); else opts.signal.addEventListener('abort', onCancel, { once: true }); }
   try {
-    res = await fetch(PROXY_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const res = await fetch(PROXY_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ctl.signal});
+    if(!res.ok){
+      const e = await res.json().catch(()=>({}));
+      throw new RequestError('busy', (e.error?.message || 'HTTP error') + ' [' + res.status + ']');
+    }
+    return await res.json(); // reading the body is covered by the same time limit
   } catch(err) {
-    throw new Error('Network error reaching the recommendation service');
+    if (err instanceof RequestError) throw err;
+    if (why) throw new RequestError(why, why === 'timeout' ? 'No answer within ' + (REQUEST_TIMEOUT_MS/1000) + 's' : 'Replaced by a newer request');
+    throw new RequestError(navigator.onLine === false ? 'offline' : 'network', err && err.message);
+  } finally {
+    clearTimeout(timer);
+    if (opts.signal) opts.signal.removeEventListener('abort', onCancel);
   }
-  if(!res.ok){
-    const e = await res.json().catch(()=>({}));
-    throw new Error(e.error?.message || 'API error '+res.status);
-  }
-  return res.json();
 }
+
+// Plain-language message for any failure. Technical details go to the console only.
+function friendlyError(err){
+  if (err && err.kind === 'offline') return { title: 'You seem to be offline', sub: 'Check your internet connection, then try again.' };
+  if (err && err.kind === 'timeout') return { title: 'Our book finder is busy right now', sub: 'It was taking too long to answer. Please try again.' };
+  return { title: 'Our book finder is busy right now', sub: 'Lots of readers are searching at once. Please try again in a moment.' };
+}
+function logRequestError(where, err){ console.error('[' + where + ']', err && err.kind ? err.kind + ':' : '', err && err.message); }
+
+// Big message with a "Try again" button, used when there is nothing else to show.
+function renderErrorBox(container, err, retry){
+  const m = friendlyError(err);
+  container.innerHTML = `<div class="error-box" role="alert"><div class="empty-title">${esc(m.title)}</div><div class="empty-sub">${esc(m.sub)}</div><button class="btn-primary retry-btn" type="button">Try again</button></div>`;
+  container.querySelector('.retry-btn').addEventListener('click', retry);
+}
+// One-line loading message that turns reassuring after 10s. Returns a function that stops the timer.
+function showLoadingLine(el, text){
+  el.classList.remove('is-error'); el.hidden = false;
+  el.innerHTML = `<span class="spinner" aria-hidden="true"></span><span class="load-text"></span>`;
+  el.querySelector('.load-text').textContent = text;
+  const t = setTimeout(() => { const s = el.querySelector('.load-text'); if (s) s.textContent = SLOW_TEXT; }, SLOW_NOTICE_MS);
+  return () => clearTimeout(t);
+}
+// Error shown in the same line, above content that stays on screen.
+function showErrorLine(el, err, keptText, retry){
+  const m = friendlyError(err);
+  el.classList.add('is-error'); el.hidden = false;
+  el.setAttribute('role', 'alert');
+  el.innerHTML = `<span><strong></strong> <span class="err-sub"></span></span><button class="section-action retry-btn" type="button">Try again</button>`;
+  el.querySelector('strong').textContent = m.title + '.';
+  el.querySelector('.err-sub').textContent = keptText || m.sub;
+  el.querySelector('.retry-btn').addEventListener('click', retry);
+}
+function hideLine(el){ el.hidden = true; el.classList.remove('is-error'); el.setAttribute('role', 'status'); el.innerHTML = ''; }
+function skeletonGrid(n){ return Array(n).fill(`<div class="skeleton-card"><div class="skeleton-cover sk-pulse"></div><div class="skeleton-info"><div class="skeleton-line sk-pulse" style="width:80%"></div><div class="skeleton-line sk-pulse" style="width:55%"></div></div></div>`).join(''); }
 
 function extractBooks(data){
   const block = data?.promptFeedback?.blockReason;
@@ -1754,8 +1856,18 @@ function extractBooks(data){
 function showSkeletons(id,n){document.getElementById(id).innerHTML=Array(n).fill(`<div class="skeleton-card"><div class="skeleton-cover sk-pulse"></div><div class="skeleton-info"><div class="skeleton-line sk-pulse" style="width:75%"></div><div class="skeleton-line sk-pulse" style="width:50%"></div><div class="skeleton-line sk-pulse" style="width:65%"></div></div></div>`).join('');}
 
 /* ── DAILY RECS ────────────────────────────────────────────────────── */
+let _dailyCtl = null, _dailySeq = 0;
 async function loadDailyRecs(){
-  showSkeletons('dailyBooks',5);
+  // A newer request (new mood, Refresh) replaces any older one still running.
+  if (_dailyCtl) _dailyCtl.abort();
+  const ctl = new AbortController(); _dailyCtl = ctl;
+  const seq = ++_dailySeq;
+  const grid = document.getElementById('dailyBooks');
+  const statusEl = document.getElementById('dailyStatus');
+  // Keep the current picks visible (dimmed) until new ones arrive; skeletons only when there is nothing yet.
+  if (grid.querySelector('.book-card')) grid.classList.add('is-refreshing');
+  else showSkeletons('dailyBooks',5);
+  const stopSlow = showLoadingLine(statusEl, grid.classList.contains('is-refreshing') ? 'Finding new picks for you…' : 'Finding your picks…');
   renderTasteInsight();
   // Show filter badge if active
   const badge = document.getElementById('popularFilterBadge');
@@ -1787,14 +1899,29 @@ CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13. Use it to constru
 Return a JSON array of exactly 5 objects:
 [{"title":"exact title","author":"Author Name","genre":"Genre 2-3 words","year":2021,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","reason":"SENTENCE 1: The core premise in one sentence — what the world or situation is, enough to know what the book is about, zero spoilers. SENTENCE 2: What the reader will FEEL reading it — the atmosphere, emotional texture, the kind of experience it delivers. Focus on feeling, not on why we picked it. Max 45 words total. No spoilers.","loved_ref":"If this recommendation connects to a specific book the reader has finished and rated 4+ stars in their journal, name that book title here. Otherwise empty string.","amazon_search":"title author"}]`;
   try{
-    const data=await callClaude(prompt);const books=extractBooks(data);
+    const data=await callClaude(prompt,{signal:ctl.signal});const books=extractBooks(data);
+    if (seq !== _dailySeq) return;
     addBooksToHistory(books);
     renderBooks('dailyBooks',books,true);
+    hideLine(statusEl);
   }catch(e){
-    console.error(e);
-    document.getElementById('dailyBooks').innerHTML=`<div class="empty-state" style="grid-column:1/-1;"><div class="empty-title">Could not load recommendations</div><div class="empty-sub">${e.message||'Please try again'}</div></div>`;
+    if (seq !== _dailySeq || (e && e.kind === 'cancelled')) return;
+    logRequestError('daily picks', e);
+    if (grid.querySelector('.book-card')) {
+      // Old picks stay; the error sits above them.
+      showErrorLine(statusEl, e, 'Your earlier picks are still below.', loadDailyRecs);
+    } else {
+      hideLine(statusEl);
+      renderErrorBox(grid, e, loadDailyRecs);
+    }
+  }finally{
+    stopSlow();
+    if (seq === _dailySeq) {
+      grid.classList.remove('is-refreshing');
+      btn.disabled=false;btn.textContent='Refresh';
+      _dailyCtl = null;
+    }
   }
-  btn.disabled=false;btn.textContent='Refresh';
 }
 
 /* ── EXPLORE SEARCH ────────────────────────────────────────────────── */
@@ -1812,10 +1939,7 @@ async function runSearch(){
     showToast('Describe what you are looking for in at least one field'); return;
   }
 
-  const btn = document.getElementById('searchBtn');
-  btn.disabled = true; btn.textContent = 'Searching...';
   document.getElementById('moreLikeHeader').style.display = 'none';
-  document.getElementById('searchResults').innerHTML = `<div class="search-results-grid">${Array(3).fill(`<div class="skeleton-card"><div class="skeleton-cover sk-pulse"></div><div class="skeleton-info"><div class="skeleton-line sk-pulse" style="width:80%"></div><div class="skeleton-line sk-pulse" style="width:55%"></div></div></div>`).join('')}</div>`;
 
   const parts = [];
   if (storyline)        parts.push(`STORYLINE (hard filter — every result must feature this plot situation or dynamic): ${storyline}`);
@@ -1846,20 +1970,48 @@ ${coverInstruction}
 Return a JSON array of exactly 3 objects. Each must have a "match_breakdown" field that honestly lists which criteria it fully satisfies, which it partially satisfies, and which it does not satisfy:
 [{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.38,"pages":320,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"94%","reason":"SENTENCE 1: The core premise in one sentence — what the situation or world is, no spoilers. SENTENCE 2: What it will feel like to read it, and which specific criteria from this search it delivers. Max 45 words. Be honest if the match is partial.","match_breakdown":"Fully matches: [list]. Partially matches: [list]. Does not match: [list or none].","amazon_search":"title author"}]`;
 
+  doSearch(prompt);
+}
+
+// Find a Book and More like this share one results area; a newer request replaces an older one.
+let _searchCtl = null, _searchSeq = 0;
+async function searchRequest({prompt, loadingText, retry, render, button}){
+  if (_searchCtl) _searchCtl.abort();
+  const ctl = new AbortController(); _searchCtl = ctl;
+  const seq = ++_searchSeq;
+  const out = document.getElementById('searchResults');
+  out.innerHTML = `<div class="load-status" role="status" aria-live="polite"></div><div class="search-results-grid">${skeletonGrid(3)}</div>`;
+  const stopSlow = showLoadingLine(out.querySelector('.load-status'), loadingText);
+  const btn = document.getElementById('searchBtn');
+  if (button) { btn.disabled = true; btn.textContent = 'Searching...'; }
   try {
-    const data = await callClaude(prompt);
+    const data = await callClaude(prompt, {signal: ctl.signal});
     const books = extractBooks(data);
-    const label = `<div style="margin-bottom:1.2rem;">
+    if (seq !== _searchSeq) return;
+    render(out, books);
+    attachBookActions();
+  } catch(e) {
+    if (seq !== _searchSeq || (e && e.kind === 'cancelled')) return;
+    logRequestError('search', e);
+    renderErrorBox(out, e, retry);
+  } finally {
+    stopSlow();
+    if (seq === _searchSeq) { btn.disabled = false; btn.textContent = 'Find my books'; _searchCtl = null; }
+  }
+}
+function doSearch(prompt){
+  return searchRequest({
+    prompt, button: true,
+    loadingText: 'Searching for books that match…',
+    retry: () => doSearch(prompt),
+    render: (out, books) => {
+      const label = `<div style="margin-bottom:1.2rem;">
       <div style="font-size:13px;font-weight:500;color:var(--ink);margin-bottom:3px;">3 results for your search</div>
       <div style="font-size:12px;color:var(--ink-4);font-weight:300;">Match scores are based on how precisely each book satisfies your criteria. Partial matches are noted honestly.</div>
     </div>`;
-    document.getElementById('searchResults').innerHTML = label + `<div class="search-results-grid">${books.map(b => bookCardHTML(b, false, true)).join('')}</div>`;
-    attachBookActions();
-  } catch(e) {
-    console.error(e);
-    document.getElementById('searchResults').innerHTML = `<div class="empty-state"><div class="empty-title">Search failed</div><div class="empty-sub">${e.message || 'Try different criteria'}</div></div>`;
-  }
-  btn.disabled = false; btn.textContent = 'Find my books';
+      out.innerHTML = label + `<div class="search-results-grid">${books.map(b => bookCardHTML(b, false, true)).join('')}</div>`;
+    }
+  });
 }
 
 /* ── MORE LIKE THIS ────────────────────────────────────────────────── */
@@ -1868,7 +2020,6 @@ async function moreLikeThis(title,author,genre){
   const header=document.getElementById('moreLikeHeader');
   header.innerHTML=`<div class="more-like-header" style="flex:1;"><p>Books similar to <strong>${esc(title)}</strong> by ${esc(author)}</p></div><button class="more-like-back" onclick="resetSearch()">Clear</button>`;
   header.style.display='flex';
-  document.getElementById('searchResults').innerHTML=`<div class="search-results-grid">${Array(3).fill(`<div class="skeleton-card"><div class="skeleton-cover sk-pulse"></div><div class="skeleton-info"><div class="skeleton-line sk-pulse" style="width:80%"></div><div class="skeleton-line sk-pulse" style="width:55%"></div></div></div>`).join('')}</div>`;
   const prompt=`You are an expert literary curator.
 Find exactly 3 books that are genuinely similar to "${title}" by ${author}${genre?' (genre: '+genre+')':''}.
 Similar means: same narrative DNA — tone, pacing, emotional register, protagonist type, and thematic concerns. Not just same genre.
@@ -1876,15 +2027,69 @@ RATING RULE: Every book must have a Goodreads rating of at least 4.0.
 CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13 (13 digits, starts 978/979). Set cover_url to https://covers.openlibrary.org/b/isbn/ISBN13-L.jpg using the real ISBN. Only use ISBNs you are confident are correct.
 Return JSON array of exactly 3:
 [{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.38,"pages":320,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"96%","reason":"SENTENCE 1: The core premise in one sentence, no spoilers. SENTENCE 2: What the reader will feel — the specific emotional quality that makes it similar to the reference book. Max 40 words.","amazon_search":"title author"}]`;
-  try{
-    const data=await callClaude(prompt);const books=extractBooks(data);
-    document.getElementById('searchResults').innerHTML=`<div style="margin-bottom:1.2rem;font-size:12.5px;color:var(--ink-4);font-weight:300;">3 books with similar DNA to <em>${esc(title)}</em></div><div class="search-results-grid">${books.map(b=>bookCardHTML(b,false,true)).join('')}</div>`;
-    attachBookActions();
-  }catch(e){
-    document.getElementById('searchResults').innerHTML=`<div class="empty-state"><div class="empty-title">Could not find similar books</div><div class="empty-sub">${e.message}</div></div>`;
+  doMoreLike(prompt, title);
+}
+function doMoreLike(prompt, title){
+  return searchRequest({
+    prompt,
+    loadingText: 'Finding books with similar DNA…',
+    retry: () => doMoreLike(prompt, title),
+    render: (out, books) => {
+      out.innerHTML=`<div style="margin-bottom:1.2rem;font-size:12.5px;color:var(--ink-4);font-weight:300;">3 books with similar DNA to <em>${esc(title)}</em></div><div class="search-results-grid">${books.map(b=>bookCardHTML(b,false,true)).join('')}</div>`;
+    }
+  });
+}
+function resetSearch(){if(_searchCtl)_searchCtl.abort();document.getElementById('moreLikeHeader').style.display='none';document.getElementById('searchResults').innerHTML='';}
+
+/* Replacement for a dismissed daily pick; "Try again" repeats the same request. */
+async function fetchReplacement(card, book, prompt) {
+  card.innerHTML = `<div class="skeleton-cover sk-pulse" style="aspect-ratio:2/3;background:var(--surf-3);"></div><div style="padding:12px;"><div class="skeleton-line sk-pulse" style="width:75%;height:11px;border-radius:4px;background:var(--surf-3);margin-bottom:8px;"></div><div class="skeleton-line sk-pulse" style="width:50%;height:11px;border-radius:4px;background:var(--surf-3);"></div></div>`;
+  const slowTimer = setTimeout(() => {
+    if (!card.isConnected) return;
+    const note = document.createElement('div');
+    note.className = 'replace-note';
+    note.style.cssText = 'padding:0 12px 12px;font-size:11.5px;color:var(--ink-4);';
+    note.textContent = SLOW_TEXT;
+    card.appendChild(note);
+  }, SLOW_NOTICE_MS);
+  try {
+    if (!prompt) {
+      const ctx = buildProfileContext();
+      const seen = state.seenTitles.slice(-200);
+      prompt = `You are a literary curator. Give exactly 1 book recommendation for this reader: ${ctx}
+The reader did NOT like "${book.title}" by ${book.author}${book.genre?' ('+book.genre+')':''} — do not recommend similar books.
+NEVER recommend: ${seen.join(', ')}.
+Rating: 4.0+ required. English only.
+Return JSON array of exactly 1 object: [{"title":"title","author":"Author","genre":"Genre","year":2022,"goodreads_rating":4.3,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg using actual ISBN","reason":"SENTENCE 1: The core premise in one sentence, no spoilers. SENTENCE 2: What it will feel like to read — the atmosphere and emotional experience. Max 40 words.","amazon_search":"title author"}]`;
+    }
+    const data = await callClaude(prompt);
+    const books = extractBooks(data);
+    if (!card.isConnected) return; // picks were reloaded meanwhile
+    if (books[0]) {
+      addBooksToHistory([books[0]]);
+      const newHTML = bookCardHTML(books[0], true);
+      card.insertAdjacentHTML('afterend', newHTML);
+      card.remove();
+      attachBookActions();
+      // Re-wire similar row with updated book list
+      const updatedCards = document.querySelectorAll('#dailyBooks .book-card');
+      const simRow = document.getElementById('similarRow');
+      if (simRow) {
+        simRow._books = Array.from(updatedCards).map(c => ({ title: c.dataset.title, author: c.dataset.author, genre: c.dataset.genre||'' }));
+      }
+    }
+  } catch(e) {
+    if (!card.isConnected) return;
+    logRequestError('replacement', e);
+    const m = friendlyError(e);
+    card.innerHTML = `<div class="error-box" role="alert" style="padding:1.6rem 1rem;border:none;"><div class="empty-title" style="font-size:1.05rem;"></div><div class="empty-sub" style="font-size:12px;"></div><button class="section-action retry-btn" type="button">Try again</button></div>`;
+    card.querySelector('.empty-title').textContent = m.title;
+    card.querySelector('.empty-sub').textContent = m.sub;
+    card.querySelector('.retry-btn').addEventListener('click', () => fetchReplacement(card, book, prompt));
+  } finally {
+    clearTimeout(slowTimer);
   }
 }
-function resetSearch(){document.getElementById('moreLikeHeader').style.display='none';document.getElementById('searchResults').innerHTML='';}
 
 /* ── HELPERS ───────────────────────────────────────────────────────── */
 function esc(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -2118,36 +2323,8 @@ function attachBookActions() {
           card.style.transition = 'opacity .3s, transform .3s';
           card.style.opacity = '0'; card.style.transform = 'scale(0.95)';
           await new Promise(r => setTimeout(r, 320));
-          // Replace with a skeleton while we fetch
           card.style.opacity = '1'; card.style.transform = '';
-          card.innerHTML = `<div class="skeleton-cover sk-pulse" style="aspect-ratio:2/3;background:var(--surf-3);"></div><div style="padding:12px;"><div class="skeleton-line sk-pulse" style="width:75%;height:11px;border-radius:4px;background:var(--surf-3);margin-bottom:8px;"></div><div class="skeleton-line sk-pulse" style="width:50%;height:11px;border-radius:4px;background:var(--surf-3);"></div></div>`;
-          // Fetch 1 replacement book
-          try {
-            const ctx = buildProfileContext();
-            const seen = state.seenTitles.slice(-200);
-            const prompt = `You are a literary curator. Give exactly 1 book recommendation for this reader: ${ctx}
-The reader did NOT like "${book.title}" by ${book.author}${book.genre?' ('+book.genre+')':''} — do not recommend similar books.
-NEVER recommend: ${seen.join(', ')}.
-Rating: 4.0+ required. English only.
-Return JSON array of exactly 1 object: [{"title":"title","author":"Author","genre":"Genre","year":2022,"goodreads_rating":4.3,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg using actual ISBN","reason":"SENTENCE 1: The core premise in one sentence, no spoilers. SENTENCE 2: What it will feel like to read — the atmosphere and emotional experience. Max 40 words.","amazon_search":"title author"}]`;
-            const data = await callClaude(prompt);
-            const books = extractBooks(data);
-            if (books[0]) {
-              addBooksToHistory([books[0]]);
-              const newHTML = bookCardHTML(books[0], true);
-              card.insertAdjacentHTML('afterend', newHTML);
-              card.remove();
-              attachBookActions();
-              // Re-wire similar row with updated book list
-              const updatedCards = document.querySelectorAll('#dailyBooks .book-card');
-              const simRow = document.getElementById('similarRow');
-              if (simRow) {
-                simRow._books = Array.from(updatedCards).map(c => ({ title: c.dataset.title, author: c.dataset.author, genre: c.dataset.genre||'' }));
-              }
-            }
-          } catch(e) {
-            card.innerHTML = `<div style="padding:1rem;font-size:12px;color:var(--ink-4);">Could not load replacement</div>`;
-          }
+          fetchReplacement(card, book);
         });
       } else {
         // In explore — just toggle opacity as before
