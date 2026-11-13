@@ -16,6 +16,10 @@ const GEMINI_MODELS = [
   { id: 'gemini-3.8-flash', timeoutMs: 25000 },
   { id: 'gemini-3.7-flash', timeoutMs: 25000 },
   { id: 'gemini-3.5-flash', timeoutMs: 25000 },
+  // Second chance for Flash-Lite: its 429s are per-minute limits that often clear within
+  // seconds, and the full models above usually fail fast, so there is time left to retry.
+  { id: 'gemini-3.5-flash-lite', timeoutMs: 12000 },
+  { id: 'gemini-3.1-flash-lite', timeoutMs: 12000 },
 ];
 // Whole request must finish well under Cloudflare's 100s limit (error 524). The app gives up at 60s.
 const TOTAL_BUDGET_MS = 50000;
