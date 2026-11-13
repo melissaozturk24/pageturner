@@ -74,5 +74,5 @@ jobs:
           echo "Other-origin POST status: $blocked"
           [ "$blocked" = 403 ] || { echo "::error::Worker did not block another origin"; exit 1; }
           site=$(curl -sL https://melissaozturk24.github.io/pageturner/)
-          echo "$site" | grep -q "const PROXY_URL = '$url'" || { echo "::error::Live site is not using the Worker URL"; exit 1; }
+          echo "$site" | grep -q "'$url'" || { echo "::error::Live site is not using the Worker URL"; exit 1; }
           echo "Live site uses $url"

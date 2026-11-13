@@ -1,0 +1,5 @@
+name = "pageturner-proxy-preview"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+# Preview copy of ../../proxy. Deployed by .github/workflows/deploy-preview-worker.yml.

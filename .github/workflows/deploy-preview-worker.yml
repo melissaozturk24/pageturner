@@ -1,0 +1,76 @@
+name: Deploy PREVIEW Cloudflare Worker
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'preview/proxy/**'
+      - '.github/workflows/deploy-preview-worker.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          for name in CLOUDFLARE_API_TOKEN GEMINI_API_KEY; do
+            value="${!name}"
+            if [ -z "$value" ]; then echo "::error::Secret $name is empty or missing"; exit 1; fi
+            value="${value%"${value##*[![:space:]]}"}"
+            if [[ "$value" == *$'\n'* ]]; then
+              echo "::error::Secret $name contains a line break. Re-paste it as a single line."; exit 1
+            fi
+          done
+          status=$(curl -s "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+            -H "Authorization: Bearer $(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '[:space:]')" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print((d.get('result') or {}).get('status') or d.get('errors'))")
+          echo "Cloudflare token status: $status"
+          [ "$status" = "active" ] || { echo "::error::Cloudflare token is not active"; exit 1; }
+
+      - name: List available Gemini Flash models
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          curl -s "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000" \
+            -H "x-goog-api-key: $(printf '%s' "$GEMINI_API_KEY" | tr -d '[:space:]')" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); [print(m['name'], '|', m.get('displayName',''), '|', m.get('version','')) for m in d.get('models',[]) if 'flash' in m['name'] and 'generateContent' in m.get('supportedGenerationMethods',[])] or print(d.get('error'))"
+
+      - name: Install Wrangler
+        run: npm install -g wrangler
+
+      - name: Deploy Worker
+        working-directory: preview/proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 90a31557c4acc8476defb30916b4d6d1
+        run: wrangler deploy 2>&1
+
+      - name: Set GEMINI_API_KEY secret
+        working-directory: preview/proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 90a31557c4acc8476defb30916b4d6d1
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: printf '%s' "$GEMINI_API_KEY" | wrangler secret put GEMINI_API_KEY
+
+      - name: Smoke test Worker and site
+        run: |
+          sleep 5
+          url=https://pageturner-proxy-preview.melissaozturk24.workers.dev
+          code=$(curl -s -D headers.txt -o resp.json -w '%{http_code}' -X POST "$url" \
+            -H 'Origin: https://melissaozturk24.github.io' -H 'Content-Type: application/json' \
+            -d '{"contents":[{"parts":[{"text":"Reply with the JSON array [\"ok\"]"}]}],"generationConfig":{"responseMimeType":"application/json"}}')
+          echo "Worker POST status: $code (model: $(grep -i '^x-gemini-model' headers.txt | cut -d' ' -f2 | tr -d '\r'))"
+          head -c 600 resp.json; echo
+          [ "$code" = 200 ] && grep -q '"candidates"' resp.json || { echo "::error::Worker did not return a Gemini response"; exit 1; }
+          blocked=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$url" -H 'Origin: https://example.com' -d '{}')
+          echo "Other-origin POST status: $blocked"
+          [ "$blocked" = 403 ] || { echo "::error::Worker did not block another origin"; exit 1; }
+          echo "Preview Worker OK at $url"

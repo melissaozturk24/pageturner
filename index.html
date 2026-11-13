@@ -1661,7 +1661,19 @@ function getLovedBooks() {
     .map(e => e.title + (e.author ? ' by ' + e.author : ''));
 }
 // Cloudflare Worker in proxy/ — it holds the Gemini key, so users don't need one.
-const PROXY_URL = 'https://pageturner-proxy.melissaozturk24.workers.dev';
+// The copy under /preview/ talks to the preview Worker (preview/proxy/) instead.
+const IS_PREVIEW = location.pathname.includes('/preview/');
+const PROXY_URL = IS_PREVIEW
+  ? 'https://pageturner-proxy-preview.melissaozturk24.workers.dev'
+  : 'https://pageturner-proxy.melissaozturk24.workers.dev';
+if(IS_PREVIEW){
+  document.addEventListener('DOMContentLoaded',()=>{
+    const b=document.createElement('div');
+    b.textContent='PREVIEW · not live yet';
+    b.style.cssText='position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:99999;background:#d97706;color:#fff;font:600 12px/1 system-ui,sans-serif;padding:6px 12px;border-radius:0 0 8px 8px;pointer-events:none';
+    document.body.appendChild(b);
+  });
+}
 
 async function callClaude(prompt){
   const body = {
