@@ -1,6 +1,9 @@
 // Pageturner proxy: forwards Gemini requests so the API key stays server-side.
 const ALLOWED_ORIGIN = 'https://melissaozturk24.github.io';
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
+// Stable Flash models, newest first. If one is overloaded (503) or rate-limited (429),
+// the next one is tried.
+const GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-2.5-flash'];
+const geminiUrl = model => 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent';
 const MAX_BODY_BYTES = 64 * 1024;
 
 const corsHeaders = {
@@ -50,14 +53,22 @@ export default {
       generationConfig: body.generationConfig,
     };
 
+    const payload = JSON.stringify(forward);
     let upstream;
-    try {
-      upstream = await fetch(GEMINI_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY.trim() },
-        body: JSON.stringify(forward),
-      });
-    } catch {
+    for (const model of GEMINI_MODELS) {
+      try {
+        upstream = await fetch(geminiUrl(model), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY.trim() },
+          body: payload,
+        });
+      } catch {
+        upstream = null;
+        continue;
+      }
+      if (upstream.status !== 503 && upstream.status !== 429) break;
+    }
+    if (!upstream) {
       return json({ error: { message: 'Could not reach Gemini' } }, 502);
     }
     return new Response(upstream.body, {
