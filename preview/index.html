@@ -1641,7 +1641,9 @@ Use real ISBNs. No markdown.`;
     loadEl.style.display='none'; booksEl.style.display='flex';
     // Verified covers fill in when found (placeholder otherwise).
     books.slice(0,4).forEach((b, i) => getBookInfo(b).then(info => {
-      const el = booksEl.querySelectorAll('.ob-preview-cover')[i]; if (!el || !info || !info.c || el.querySelector('img')) return;
+      const el = booksEl.querySelectorAll('.ob-preview-cover')[i];
+      if (el && info && info.x) { el.closest('.ob-preview-book').remove(); console.info('[books] removed from preview, not found on Open Library:', b.title); return; }
+      if (!el || !info || !info.c || el.querySelector('img')) return;
       const img = document.createElement('img'); img.alt = b.title;
       img.onload = function(){ if (this.naturalWidth > 20) { this.classList.add('cover-visible'); const ph = el.querySelector('.ob-preview-cover-ph'); if (ph) ph.classList.add('hidden'); } };
       img.src = info.c; el.prepend(img);
@@ -1934,7 +1936,7 @@ async function callClaude(prompt, opts = {}){
 function friendlyError(err){
   if (err && err.kind === 'offline') return { title: 'You seem to be offline', sub: 'Check your internet connection, then try again.' };
   if (err && err.kind === 'no_new_books') return { title: 'No new books this time', sub: "Every suggestion was one you've already seen. Please try again." };
-  if (err && err.kind === 'low_rated') return { title: 'No well-rated matches this time', sub: 'Readers rated every match below ' + MIN_REAL_RATING + '. Please try again.' };
+  if (err && err.kind === 'low_rated') return { title: 'No matches we could confirm this time', sub: 'The books we found were poorly rated by readers or could not be found in any library catalogue. Please try again.' };
   if (err && err.kind === 'timeout') return { title: 'Our book finder is busy right now', sub: 'It was taking too long to answer. Please try again.' };
   return { title: 'Our book finder is busy right now', sub: 'Lots of readers are searching at once. Please try again in a moment.' };
 }
@@ -2021,7 +2023,7 @@ function pickNew(books, blocked, need){
     if (!b || !b.title) continue;
     const k = normTitle(b.title);
     const known = cachedRating(b);
-    if (!k || blocked.has(k) || (known && known.avg < MIN_REAL_RATING)) { rejected.push(b.title); continue; }
+    if (!k || blocked.has(k) || (known && known.avg < MIN_REAL_RATING) || knownInvented(b)) { rejected.push(b.title); continue; }
     if (kept.length < need) { kept.push(cleanBook(b)); blocked.add(k); }
   }
   return { kept, rejected };
@@ -2074,8 +2076,8 @@ FOLLOW-UP: Return a JSON array of exactly ${ask} books, none of them on the OFF-
 const MIN_REAL_RATING = 3.5;     // books rated below this by real readers are swapped out
 const MIN_RATING_COUNT = 5;      // fewer ratings than this is too few to trust (no number shown)
 const RATING_TIMEOUT_MS = 8000;
-const RATING_CACHE_KEY = 'pt_bookinfo_v2', OLD_RATING_CACHE_KEYS = ['pt_ratings_v1'];
-const INFO_VERSION = 2;          // bump to re-check books saved with an older lookup
+const RATING_CACHE_KEY = 'pt_bookinfo_v3', OLD_RATING_CACHE_KEYS = ['pt_ratings_v1', 'pt_bookinfo_v2'];
+const INFO_VERSION = 3;          // bump to re-check books saved with an older lookup
 const RATING_TTL_MS = 30 * 864e5, NO_RATING_TTL_MS = 7 * 864e5, RATING_CACHE_MAX = 400;
 let _ratingCache = null;
 const _ratingInflight = new Map();
@@ -2114,7 +2116,7 @@ function cachedRating(b){
 async function getBookInfo(b){
   const key = ratingKey(b);
   const known = ratingStore()[key];
-  if (known) return { r: known.r, c: known.c || '' };
+  if (known) return { r: known.r, c: known.c || '', x: !!known.x };
   if (_ratingInflight.has(key)) return _ratingInflight.get(key);
   const job = (async () => {
     const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), RATING_TIMEOUT_MS);
@@ -2138,8 +2140,17 @@ async function getBookInfo(b){
       let coverId = 0;
       for (const d of matches) { const ed = editionMatch(d); coverId = (ed && ed.cover_i) || d.cover_i || 0; if (coverId) break; }
       const c = coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : '';
-      ratingStore()[key] = { r, c, t: Date.now() }; saveRatingStore();
-      return { r, c };
+      // Not found as this title by this author: does the title or the author exist at all?
+      // Only a book where NEITHER can be found is treated as invented (x: true).
+      // If Open Library does not answer, nothing is decided (undefined) and the book stays.
+      let x = false;
+      if (!matches.length) {
+        const exists = await bookOrAuthorExists(b, ctl.signal);
+        if (exists === undefined) return undefined;
+        x = !exists;
+      }
+      ratingStore()[key] = { r, c, x, t: Date.now() }; saveRatingStore();
+      return { r, c, x };
     } catch (e) {
       return undefined; // network problem or too slow: no number, no cover, try again another time
     } finally {
@@ -2149,6 +2160,24 @@ async function getBookInfo(b){
   _ratingInflight.set(key, job);
   return job;
 }
+function authorFirstInitial(a){ const parts = String(a || '').toLowerCase().normalize('NFKD').replace(/[^a-z ]+/g, ' ').trim().split(/\s+/); return parts.length > 1 ? parts[0][0] : ''; }
+// true if Open Library knows this title (by anyone, any edition) or an author with this name;
+// false if neither; undefined if it could not be checked.
+async function bookOrAuthorExists(b, signal){
+  const want = normTitle(b.title), last = authorKey(b.author), first = authorFirstInitial(b.author);
+  const titleQ = new URLSearchParams({ q: 'title:"' + String(b.title).replace(/["\\]/g, ' ') + '"', fields: 'title,editions,editions.title', limit: '20' });
+  const titleCheck = fetch('https://openlibrary.org/search.json?' + titleQ, { signal }).then(r => r.ok ? r.json() : Promise.reject())
+    .then(d => (d.docs || []).some(x => normTitle(x.title) === want || ((x.editions && x.editions.docs) || []).some(e => normTitle(e.title) === want)));
+  const authorCheck = !last ? Promise.resolve(false) : fetch('https://openlibrary.org/search/authors.json?' + new URLSearchParams({ q: b.author, limit: '10' }), { signal })
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(d => (d.docs || []).some(x => authorKey(x.name) === last && (!first || authorFirstInitial(x.name) === first || !authorFirstInitial(x.name))));
+  try {
+    const [t, a] = await Promise.all([titleCheck, authorCheck]);
+    return t || a;
+  } catch (e) { return undefined; }
+}
+// Known to be invented (cached): neither the title nor the author exists on Open Library.
+function knownInvented(b){ const e = ratingStore()[ratingKey(b)]; return !!(e && e.x); }
 async function getRealRating(b){ const i = await getBookInfo(b); return i === undefined ? undefined : i.r; }
 // Put a verified cover into a card (only if it has none yet).
 function setCardCover(card, url){
@@ -2176,20 +2205,22 @@ function fillRatings(container, onRating){
   container.querySelectorAll('.book-card[data-title]').forEach(card => {
     const slotEl = card.querySelector('.rating-slot');
     const book = { title: card.dataset.title, author: card.dataset.author };
-    if (slotEl && !slotEl.dataset.pending) { if (onRating) onRating(card, cachedRating(book) ?? null, bookCover(book)); return; }
+    if (slotEl && !slotEl.dataset.pending) { if (onRating) onRating(card, cachedRating(book) ?? null, bookCover(book), knownInvented(book)); return; }
     getBookInfo(book).then(info => {
       if (!card.isConnected || info === undefined) return;
       if (slotEl) { slotEl.innerHTML = ratingInnerHTML(info.r); delete slotEl.dataset.pending; }
       setCardCover(card, info.c);
-      if (onRating) onRating(card, info.r, info.c);
+      if (onRating) onRating(card, info.r, info.c, !!info.x);
     });
   });
 }
-// For search-style results: remove cards whose real rating is below the minimum.
+// For search-style results: remove cards whose real rating is below the minimum, or that Open Library
+// cannot find at all (neither the title nor the author).
 function dropLowRated(container, onEmpty){
-  fillRatings(container, (card, r) => {
-    if (!r || r.avg >= MIN_REAL_RATING) return;
-    console.info('[ratings] removed low-rated:', card.dataset.title, r.avg);
+  fillRatings(container, (card, r, c, invented) => {
+    const low = r && r.avg < MIN_REAL_RATING;
+    if (!low && !invented) return;
+    console.info(invented ? '[books] removed, not found on Open Library:' : '[ratings] removed low-rated:', card.dataset.title, invented ? card.dataset.author : r.avg);
     card.remove();
     if (!container.querySelector('.book-card') && onEmpty) onEmpty();
   });
@@ -2252,8 +2283,9 @@ function showTodaysPicks(){
 }
 function dismissedCardHTML(entry, slot){
   const book = entry.dismissed;
-  const head = entry.lowRated ? 'Swapped out' : 'Not for you';
-  const sub = entry.lowRated ? `Readers rate “${esc(book.title)}” ${entry.lowRated.avg.toFixed(1)} on ${esc(entry.lowRated.source)}.` : `You dismissed “${esc(book.title)}”.`;
+  const head = (entry.lowRated || entry.notFound) ? 'Swapped out' : 'Not for you';
+  const sub = entry.lowRated ? `Readers rate “${esc(book.title)}” ${entry.lowRated.avg.toFixed(1)} on ${esc(entry.lowRated.source)}.`
+    : entry.notFound ? `We couldn't find “${esc(book.title)}” in any library catalogue.` : `You dismissed “${esc(book.title)}”.`;
   return `<div class="book-card dismissed-slot" data-slot="${slot}"><div class="error-box" style="padding:1.6rem 1rem;border:none;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;">
     <div class="empty-title" style="font-size:1.05rem;">${head}</div>
     <div class="empty-sub" style="font-size:12px;">${sub}</div>
@@ -2277,7 +2309,7 @@ function renderDaily(){
 }
 const MAX_AUTO_SWAPS = 2; // per slot per day, so low-rated suggestions cannot keep a card churning
 // Save each pick's real rating with today's picks (same value on every reload) and swap out low-rated ones.
-function dailyRatingArrived(card, r, c){
+function dailyRatingArrived(card, r, c, invented){
   const slot = +card.dataset.slot;
   const d = todaysPicks(); if (!d || !card.isConnected) return;
   const b = d.books[slot];
@@ -2289,11 +2321,12 @@ function dailyRatingArrived(card, r, c){
     (state.history || []).forEach(w => (w.books || []).forEach(h => { if (normTitle(h.title) === normTitle(b.title)) h.cover_url = b.cover_url; }));
     saveState();
   }
-  if (!r || r.avg >= MIN_REAL_RATING) return;
+  const low = r && r.avg < MIN_REAL_RATING;
+  if (!low && !invented) return;
   const swaps = (b.swaps || 0) + 1;
-  d.books[slot] = { dismissed: { title: b.title, author: b.author, genre: b.genre }, lowRated: r, swaps };
+  d.books[slot] = { dismissed: { title: b.title, author: b.author, genre: b.genre }, ...(low ? { lowRated: r } : { notFound: true }), swaps };
   saveState();
-  console.info('[ratings] swapping out low-rated pick:', b.title, r.avg);
+  console.info(low ? '[ratings] swapping out low-rated pick:' : '[books] swapping out pick not found on Open Library:', b.title, low ? r.avg : b.author);
   setTimeout(() => { if (swaps <= MAX_AUTO_SWAPS) fetchReplacement(slot); else renderDaily(); }, 0);
 }
 
@@ -2511,6 +2544,8 @@ async function fetchReplacement(slot, prompt) {
       const seen = state.seenTitles.slice(-200);
       const why = entry.lowRated
         ? `Readers rate "${book.title}" by ${book.author} only ${entry.lowRated.avg.toFixed(1)} out of 5 on ${entry.lowRated.source}, so it was swapped out — recommend a different, well-loved book.`
+        : entry.notFound
+        ? `"${book.title}" by ${book.author} could not be found in any library catalogue, so it was swapped out. Recommend a REAL, published book — double-check the exact title and author.`
         : `The reader did NOT like "${book.title}" by ${book.author}${book.genre?' ('+book.genre+')':''} — do not recommend similar books.`;
       prompt = `You are a literary curator. Give exactly 1 book recommendation for this reader: ${ctx}
 ${why}
