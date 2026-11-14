@@ -2079,8 +2079,8 @@ FOLLOW-UP: Return a JSON array of exactly ${ask} books, none of them on the OFF-
 const MIN_REAL_RATING = 3.5;     // books rated below this by real readers are swapped out
 const MIN_RATING_COUNT = 5;      // fewer ratings than this is too few to trust (no number shown)
 const RATING_TIMEOUT_MS = 8000;
-const RATING_CACHE_KEY = 'pt_bookinfo_v4', OLD_RATING_CACHE_KEYS = ['pt_ratings_v1', 'pt_bookinfo_v2', 'pt_bookinfo_v3'];
-const INFO_VERSION = 4;          // bump to re-check books saved with an older lookup
+const RATING_CACHE_KEY = 'pt_bookinfo_v5', OLD_RATING_CACHE_KEYS = ['pt_ratings_v1', 'pt_bookinfo_v2', 'pt_bookinfo_v3', 'pt_bookinfo_v4'];
+const INFO_VERSION = 5;          // bump to re-check books saved with an older lookup
 const RATING_TTL_MS = 30 * 864e5, NO_RATING_TTL_MS = 7 * 864e5, RATING_CACHE_MAX = 400;
 let _ratingCache = null;
 const _ratingInflight = new Map();
@@ -2100,7 +2100,8 @@ function saveRatingStore(){
 }
 // Author names are compared by surname, ignoring accents and common spelling variants (Knausgaard = Knausgård).
 function plainName(a){ return String(a || '').toLowerCase().replace(/ø/g, 'o').replace(/æ/g, 'ae').replace(/ß/g, 'ss').replace(/œ/g, 'oe').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z ]+/g, ' ').replace(/aa/g, 'a').trim(); }
-function authorKey(a){ const parts = plainName(a).split(/\s+/); return parts[parts.length - 1] || ''; }
+// Surname, loosely: transliterations differ in y/i and doubled letters (Krzhizhanovsky = Krzhizhanovskiĭ).
+function authorKey(a){ const parts = plainName(a).split(/\s+/); return (parts[parts.length - 1] || '').replace(/y/g, 'i').replace(/(.)\1+/g, '$1'); }
 function ratingKey(b){ return normTitle(b.title) + '|' + authorKey(b.author); }
 // Covers are shown only when they are Open Library cover images found by this lookup.
 function verifiedCover(u){ return (typeof u === 'string' && /^https:\/\/covers\.openlibrary\.org\/b\/id\/\d+-[SML]\.jpg$/.test(u)) ? u : ''; }
@@ -2126,13 +2127,23 @@ async function getBookInfo(b){
   const job = (async () => {
     const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), RATING_TIMEOUT_MS);
     try {
-      const q = new URLSearchParams({ q: 'title:"' + String(b.title).replace(/["\\]/g, ' ') + '"', fields: 'key,title,author_name,ratings_average,ratings_count,cover_i,editions,editions.title,editions.cover_i', limit: '10' });
+      // A leading The/A/An is left out of the search phrase ("The Last Things" finds "Last things").
+      const qTitle = String(b.title).replace(/["\\]/g, ' ').replace(/^\s*(the|a|an)\s+/i, '');
+      const q = new URLSearchParams({ q: 'title:"' + qTitle + '"', fields: 'key,title,author_name,ratings_average,ratings_count,cover_i,editions,editions.title,editions.cover_i', limit: '10' });
       if (b.author) q.set('author', b.author);
       const res = await fetch('https://openlibrary.org/search.json?' + q, { signal: ctl.signal });
       if (!res.ok) return undefined;
       const data = await res.json();
+      // Not found with Open Library's own author filter (it treats spellings like Krzhizhanovsky /
+      // Krzhizhanovskiĭ as different people): search the title alone and compare authors here.
+      if (b.author && !(data.docs || []).length) {
+        const q2 = new URLSearchParams(q); q2.delete('author'); q2.set('limit', '20');
+        const res2 = await fetch('https://openlibrary.org/search.json?' + q2, { signal: ctl.signal });
+        if (!res2.ok) return undefined;
+        data.docs = (await res2.json()).docs || [];
+      }
       const want = normTitle(b.title), last = authorKey(b.author);
-      const byAuthor = d => !last || (d.author_name || []).some(n => authorKey(n) === last || String(n).toLowerCase().includes(last));
+      const byAuthor = d => !last || (d.author_name || []).some(n => authorKey(n) === last || plainName(n).includes(plainName(b.author).split(/\s+/).pop()));
       const editionMatch = d => ((d.editions && d.editions.docs) || []).find(e => sameTitle(e.title, b.title));
       const matches = (data.docs || []).filter(d => byAuthor(d) && (sameTitle(d.title, b.title) || editionMatch(d)));
       // Rating: combine every matching entry for this book by this author.
