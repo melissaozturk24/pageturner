@@ -1987,6 +1987,9 @@ function normTitle(t){
 function lovedTitles(){
   return String(state.profile.favBooks || '').split(/[,;\n]+/).map(x => x.split(/\s+by\s+/i)[0].trim()).filter(x => x.length > 1);
 }
+// Same as normTitle but keeps the part after a colon: "Life: A User's Manual" = "Life, a user's manual".
+function fullTitle(t){ return normTitle(String(t || '').replace(/:/g, ' ')); }
+function sameTitle(a, b){ return normTitle(a) === normTitle(b) || fullTitle(a) === fullTitle(b); }
 // Everything the visitor has already met: History, never-show-again, TBR, Journal, loved books and books on screen.
 function seenTitleSet(extra){
   const set = new Set();
@@ -2076,8 +2079,8 @@ FOLLOW-UP: Return a JSON array of exactly ${ask} books, none of them on the OFF-
 const MIN_REAL_RATING = 3.5;     // books rated below this by real readers are swapped out
 const MIN_RATING_COUNT = 5;      // fewer ratings than this is too few to trust (no number shown)
 const RATING_TIMEOUT_MS = 8000;
-const RATING_CACHE_KEY = 'pt_bookinfo_v3', OLD_RATING_CACHE_KEYS = ['pt_ratings_v1', 'pt_bookinfo_v2'];
-const INFO_VERSION = 3;          // bump to re-check books saved with an older lookup
+const RATING_CACHE_KEY = 'pt_bookinfo_v4', OLD_RATING_CACHE_KEYS = ['pt_ratings_v1', 'pt_bookinfo_v2', 'pt_bookinfo_v3'];
+const INFO_VERSION = 4;          // bump to re-check books saved with an older lookup
 const RATING_TTL_MS = 30 * 864e5, NO_RATING_TTL_MS = 7 * 864e5, RATING_CACHE_MAX = 400;
 let _ratingCache = null;
 const _ratingInflight = new Map();
@@ -2130,8 +2133,8 @@ async function getBookInfo(b){
       const data = await res.json();
       const want = normTitle(b.title), last = authorKey(b.author);
       const byAuthor = d => !last || (d.author_name || []).some(n => authorKey(n) === last || String(n).toLowerCase().includes(last));
-      const editionMatch = d => ((d.editions && d.editions.docs) || []).find(e => normTitle(e.title) === want);
-      const matches = (data.docs || []).filter(d => byAuthor(d) && (normTitle(d.title) === want || editionMatch(d)));
+      const editionMatch = d => ((d.editions && d.editions.docs) || []).find(e => sameTitle(e.title, b.title));
+      const matches = (data.docs || []).filter(d => byAuthor(d) && (sameTitle(d.title, b.title) || editionMatch(d)));
       // Rating: combine every matching entry for this book by this author.
       const rated = matches.filter(d => d.ratings_count > 0);
       const count = rated.reduce((a, d) => a + d.ratings_count, 0);
@@ -2142,15 +2145,10 @@ async function getBookInfo(b){
       let coverId = 0;
       for (const d of matches) { const ed = editionMatch(d); coverId = (ed && ed.cover_i) || d.cover_i || 0; if (coverId) break; }
       const c = coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : '';
-      // Not found as this title by this author: does the title or the author exist at all?
-      // Only a book where NEITHER can be found is treated as invented (x: true).
-      // If Open Library does not answer, nothing is decided (undefined) and the book stays.
-      let x = false;
-      if (!matches.length) {
-        const exists = await bookOrAuthorExists(b, ctl.signal);
-        if (exists === undefined) return undefined;
-        x = !exists;
-      }
+      // Open Library answered but has no book with this title (in any edition) by this author:
+      // treat it as invented (x: true). If Open Library did not answer, we never get here,
+      // nothing is decided and the book stays.
+      const x = !matches.length;
       ratingStore()[key] = { r, c, x, t: Date.now() }; saveRatingStore();
       return { r, c, x };
     } catch (e) {
@@ -2162,23 +2160,7 @@ async function getBookInfo(b){
   _ratingInflight.set(key, job);
   return job;
 }
-function authorFirstInitial(a){ const parts = plainName(a).split(/\s+/); return parts.length > 1 ? parts[0][0] : ''; }
-// true if Open Library knows this title (by anyone, any edition) or an author with this name;
-// false if neither; undefined if it could not be checked.
-async function bookOrAuthorExists(b, signal){
-  const want = normTitle(b.title), last = authorKey(b.author), first = authorFirstInitial(b.author);
-  const titleQ = new URLSearchParams({ q: 'title:"' + String(b.title).replace(/["\\]/g, ' ') + '"', fields: 'key,title,editions,editions.title', limit: '20' }); // 'key' is needed or Open Library returns no editions
-  const titleCheck = fetch('https://openlibrary.org/search.json?' + titleQ, { signal }).then(r => r.ok ? r.json() : Promise.reject())
-    .then(d => (d.docs || []).some(x => normTitle(x.title) === want || ((x.editions && x.editions.docs) || []).some(e => normTitle(e.title) === want)));
-  const authorCheck = !last ? Promise.resolve(false) : fetch('https://openlibrary.org/search/authors.json?' + new URLSearchParams({ q: b.author, limit: '10' }), { signal })
-    .then(r => r.ok ? r.json() : Promise.reject())
-    .then(d => (d.docs || []).some(x => authorKey(x.name) === last && (!first || authorFirstInitial(x.name) === first || !authorFirstInitial(x.name))));
-  try {
-    const [t, a] = await Promise.all([titleCheck, authorCheck]);
-    return t || a;
-  } catch (e) { return undefined; }
-}
-// Known to be invented (cached): neither the title nor the author exists on Open Library.
+// Known to be invented (cached): Open Library has no book with this title by this author.
 function knownInvented(b){ const e = ratingStore()[ratingKey(b)]; return !!(e && e.x); }
 async function getRealRating(b){ const i = await getBookInfo(b); return i === undefined ? undefined : i.r; }
 // Put a verified cover into a card (only if it has none yet).
@@ -2217,7 +2199,7 @@ function fillRatings(container, onRating){
   });
 }
 // For search-style results: remove cards whose real rating is below the minimum, or that Open Library
-// cannot find at all (neither the title nor the author).
+// cannot find as this title by this author.
 function dropLowRated(container, onEmpty){
   fillRatings(container, (card, r, c, invented) => {
     const low = r && r.avg < MIN_REAL_RATING;
@@ -2287,7 +2269,7 @@ function dismissedCardHTML(entry, slot){
   const book = entry.dismissed;
   const head = (entry.lowRated || entry.notFound) ? 'Swapped out' : 'Not for you';
   const sub = entry.lowRated ? `Readers rate “${esc(book.title)}” ${entry.lowRated.avg.toFixed(1)} on ${esc(entry.lowRated.source)}.`
-    : entry.notFound ? `We couldn't find “${esc(book.title)}” in any library catalogue.` : `You dismissed “${esc(book.title)}”.`;
+    : entry.notFound ? `We couldn't find “${esc(book.title)}” by ${esc(book.author || 'this author')} in any library catalogue.` : `You dismissed “${esc(book.title)}”.`;
   return `<div class="book-card dismissed-slot" data-slot="${slot}"><div class="error-box" style="padding:1.6rem 1rem;border:none;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;">
     <div class="empty-title" style="font-size:1.05rem;">${head}</div>
     <div class="empty-sub" style="font-size:12px;">${sub}</div>
@@ -2547,7 +2529,7 @@ async function fetchReplacement(slot, prompt) {
       const why = entry.lowRated
         ? `Readers rate "${book.title}" by ${book.author} only ${entry.lowRated.avg.toFixed(1)} out of 5 on ${entry.lowRated.source}, so it was swapped out — recommend a different, well-loved book.`
         : entry.notFound
-        ? `"${book.title}" by ${book.author} could not be found in any library catalogue, so it was swapped out. Recommend a REAL, published book — double-check the exact title and author.`
+        ? `"${book.title}" by ${book.author} could not be found in any library catalogue (no book with that title by that author), so it was swapped out. Recommend a REAL, published book — double-check that this exact title was written by this exact author.`
         : `The reader did NOT like "${book.title}" by ${book.author}${book.genre?' ('+book.genre+')':''} — do not recommend similar books.`;
       prompt = `You are a literary curator. Give exactly 1 book recommendation for this reader: ${ctx}
 ${why}
