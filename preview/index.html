@@ -2095,7 +2095,9 @@ function saveRatingStore(){
   if (keys.length > RATING_CACHE_MAX) keys.sort((a, b) => c[a].t - c[b].t).slice(0, keys.length - RATING_CACHE_MAX).forEach(k => delete c[k]);
   try { localStorage.setItem(RATING_CACHE_KEY, JSON.stringify(c)); } catch (e) {}
 }
-function authorKey(a){ const parts = String(a || '').toLowerCase().normalize('NFKD').replace(/[^a-z ]+/g, ' ').trim().split(/\s+/); return parts[parts.length - 1] || ''; }
+// Author names are compared by surname, ignoring accents and common spelling variants (Knausgaard = Knausgård).
+function plainName(a){ return String(a || '').toLowerCase().replace(/ø/g, 'o').replace(/æ/g, 'ae').replace(/ß/g, 'ss').replace(/œ/g, 'oe').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z ]+/g, ' ').replace(/aa/g, 'a').trim(); }
+function authorKey(a){ const parts = plainName(a).split(/\s+/); return parts[parts.length - 1] || ''; }
 function ratingKey(b){ return normTitle(b.title) + '|' + authorKey(b.author); }
 // Covers are shown only when they are Open Library cover images found by this lookup.
 function verifiedCover(u){ return (typeof u === 'string' && /^https:\/\/covers\.openlibrary\.org\/b\/id\/\d+-[SML]\.jpg$/.test(u)) ? u : ''; }
@@ -2160,12 +2162,12 @@ async function getBookInfo(b){
   _ratingInflight.set(key, job);
   return job;
 }
-function authorFirstInitial(a){ const parts = String(a || '').toLowerCase().normalize('NFKD').replace(/[^a-z ]+/g, ' ').trim().split(/\s+/); return parts.length > 1 ? parts[0][0] : ''; }
+function authorFirstInitial(a){ const parts = plainName(a).split(/\s+/); return parts.length > 1 ? parts[0][0] : ''; }
 // true if Open Library knows this title (by anyone, any edition) or an author with this name;
 // false if neither; undefined if it could not be checked.
 async function bookOrAuthorExists(b, signal){
   const want = normTitle(b.title), last = authorKey(b.author), first = authorFirstInitial(b.author);
-  const titleQ = new URLSearchParams({ q: 'title:"' + String(b.title).replace(/["\\]/g, ' ') + '"', fields: 'title,editions,editions.title', limit: '20' });
+  const titleQ = new URLSearchParams({ q: 'title:"' + String(b.title).replace(/["\\]/g, ' ') + '"', fields: 'key,title,editions,editions.title', limit: '20' }); // 'key' is needed or Open Library returns no editions
   const titleCheck = fetch('https://openlibrary.org/search.json?' + titleQ, { signal }).then(r => r.ok ? r.json() : Promise.reject())
     .then(d => (d.docs || []).some(x => normTitle(x.title) === want || ((x.editions && x.editions.docs) || []).some(e => normTitle(e.title) === want)));
   const authorCheck = !last ? Promise.resolve(false) : fetch('https://openlibrary.org/search/authors.json?' + new URLSearchParams({ q: b.author, limit: '10' }), { signal })
