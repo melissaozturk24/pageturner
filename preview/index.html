@@ -290,6 +290,17 @@ main{max-width:1140px;margin:0 auto;padding:2.5rem 2rem;}
 .auth-btn.secondary:hover{background:var(--surf-3);}
 .auth-switch{text-align:center;margin-top:1.2rem;font-size:13px;color:var(--ink-4);}
 .auth-switch button{background:none;border:none;cursor:pointer;color:var(--pink-dark);font-size:13px;font-weight:500;}
+.device-note{font-size:12.5px;color:var(--ink-3);line-height:1.6;font-weight:300;background:var(--surf-2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin:1rem 0 0;}
+.optional{font-weight:300;color:var(--ink-4);}
+.import-hint{font-size:12px;color:var(--ink-4);margin-top:1.2rem;font-weight:300;}
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+.stat{background:var(--surf-2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
+.stat-n{font-family:'Playfair Display',serif;font-size:1.5rem;color:var(--ink);line-height:1.1;}
+.stat-l{font-size:11.5px;color:var(--ink-4);margin-top:2px;}
+.data-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:1rem;}
+.danger-action{color:#a33a4a;border-color:#e3b7bf;}
+.danger-action:hover{background:#fbecef;color:#8a2333;}
+@media(max-width:600px){.stats-row{grid-template-columns:repeat(2,1fr);}}
 .auth-divider{text-align:center;color:var(--ink-4);font-size:12px;margin:1rem 0;}
 
 .toast{position:fixed;bottom:2rem;right:2rem;z-index:500;background:var(--ink);color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transform:translateY(8px);transition:all .25s;pointer-events:none;box-shadow:var(--sh-md);}
@@ -392,6 +403,7 @@ main{max-width:1140px;margin:0 auto;padding:2.5rem 2rem;}
         <span class="genre-chip" data-val="Biography">Biography</span>
         <span class="genre-chip" data-val="Essay">Essay</span>
       </div>
+      <p class="import-hint">Moving from another device or browser? <button type="button" class="retry-link" onclick="document.getElementById('importFile').click()">Import your data</button></p>
     </div>
     <div class="modal-step" id="step2">
       <p class="step-q">Books or authors you have genuinely loved</p>
@@ -433,12 +445,11 @@ main{max-width:1140px;margin:0 auto;padding:2.5rem 2rem;}
         <div class="ob-preview-books" id="obPreviewBooks" style="display:none;"></div>
       </div>
     </div>
-    <!-- STEP 5: Account creation -->
+    <!-- STEP 5: first name (optional). No accounts: everything stays on this device. -->
     <div class="modal-step" id="step5">
-      <p class="step-q">One last step — save your taste profile</p>
-      <div class="auth-field"><label>Name</label><input type="text" id="ob-name" placeholder="Your name"></div>
-      <div class="auth-field"><label>Email</label><input type="email" id="ob-email" placeholder="hello@email.com"></div>
-      <div class="auth-field"><label>Password</label><input type="password" id="ob-pass" placeholder="Choose a password"></div>
+      <p class="step-q">Last step — what should we call you?</p>
+      <div class="auth-field"><label for="ob-name">First name <span class="optional">(optional)</span></label><input type="text" id="ob-name" placeholder="Your first name" autocomplete="given-name" maxlength="40"></div>
+      <p class="device-note">Your books and preferences are saved on this device only. Clearing your browser data will erase them. You can export them any time from My profile.</p>
     </div>
     <div class="modal-nav">
       <div class="step-dots">
@@ -470,7 +481,7 @@ main{max-width:1140px;margin:0 auto;padding:2.5rem 2rem;}
     <button class="nav-btn" onclick="showPage('tracker')" id="nav-tracker">Journal</button>
     <button class="nav-btn" onclick="showPage('history')" id="nav-history">History</button>
     <button class="nav-btn" onclick="showPage('about')" id="nav-about">About</button>
-    <button class="nav-signin" onclick="showPage('account')" id="nav-account">Account</button>
+    <button class="nav-signin" onclick="showPage('account')" id="nav-account">My profile</button>
   </div>
 </nav>
 
@@ -858,52 +869,36 @@ main{max-width:1140px;margin:0 auto;padding:2.5rem 2rem;}
   </main>
 </div>
 
-<!-- ACCOUNT PAGE (login + profile merged) -->
+<!-- MY PROFILE PAGE (no accounts: everything is saved in this browser) -->
 <div class="page" id="page-account">
   <main style="max-width:720px;margin:0 auto;">
-
-    <!-- LOGIN STATE: shown when not signed in -->
-    <div id="accountLoginState">
+    <div id="accountProfileState">
       <div class="section-head">
         <div>
-          <div class="section-title">Your Account</div>
-          <div class="section-sub">Your taste profile lives here. Sign in to keep your picks sharp.</div>
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;max-width:600px;">
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:2rem;">
-          <p style="font-family:'Playfair Display',serif;font-size:1.2rem;font-weight:400;color:var(--ink);margin-bottom:.4rem;">Sign in</p>
-          <p style="font-size:13px;color:var(--ink-4);margin-bottom:1.5rem;font-weight:300;">Your picks, your saves, your journal — all waiting.</p>
-          <div class="auth-field"><label>Email</label><input type="email" id="login-email" placeholder="hello@email.com"></div>
-          <div class="auth-field"><label>Password</label><input type="password" id="login-pass" placeholder="Your password"></div>
-          <button class="auth-btn" onclick="doLogin()" style="margin-top:.8rem;">Sign in</button>
-        </div>
-        <div style="background:var(--surf-2);border:1px solid var(--border);border-radius:16px;padding:2rem;">
-          <p style="font-family:'Playfair Display',serif;font-size:1.2rem;font-weight:400;color:var(--ink);margin-bottom:.4rem;">New here?</p>
-          <p style="font-size:13px;color:var(--ink-4);margin-bottom:1.5rem;font-weight:300;">Tell us what you love and what burns you out. We do the rest.</p>
-          <button class="auth-btn secondary" onclick="openOnboard()" style="margin-top:0;">Start for free</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- SIGNED IN STATE: profile settings shown inline -->
-    <div id="accountProfileState" style="display:none;">
-      <div class="section-head">
-        <div>
-          <div class="section-title" id="accountName">Your Profile</div>
+          <div class="section-title" id="accountName">My profile</div>
           <div class="section-sub">The more you tell us, the better we get at finding books that will obsess you</div>
         </div>
         <div style="display:flex;gap:8px;">
           <button class="btn-primary" onclick="saveProfile()">Save changes</button>
-          <button class="section-action" onclick="doLogout()">Sign out</button>
+        </div>
+      </div>
+
+      <div class="profile-block" id="dataBlock">
+        <h3>Your reading so far</h3>
+        <div class="stats-row" id="profileStats"></div>
+        <p class="device-note">Your books and preferences are saved on this device only. Clearing your browser data will erase them. To use them on another device or browser, export them here and import the file there.</p>
+        <div class="data-actions">
+          <button class="section-action" type="button" onclick="exportData()">Export my data</button>
+          <button class="section-action" type="button" onclick="document.getElementById('importFile').click()">Import from a file</button>
+          <input type="file" id="importFile" accept="application/json,.json" hidden onchange="importData(this)">
+          <button class="section-action danger-action" type="button" onclick="startOver()">Start over</button>
         </div>
       </div>
 
       <div class="profile-block">
         <h3>About you</h3>
         <div class="profile-grid">
-          <div><span class="field-label">Name</span><input class="field-input" id="p-name" placeholder="Your name"></div>
-          <div><span class="field-label">Email</span><input class="field-input" id="p-email" placeholder="hello@email.com" readonly style="opacity:.6;"></div>
+          <div><span class="field-label">First name</span><input class="field-input" id="p-name" placeholder="Your first name" maxlength="40" autocomplete="given-name"></div>
           <div><span class="field-label">Pace</span>
             <select class="field-select" id="p-pace"><option>Slow burn</option><option>Fast-paced</option><option>Both</option></select>
           </div>
@@ -1119,6 +1114,15 @@ const state = {
 let onboardStep = 1;
 const TOTAL_ONBOARD_STEPS = 5;
 
+// Fresh, empty data (used by Import and Start over).
+const DEFAULT_STATE = JSON.parse(JSON.stringify(state));
+const PASSWORD_KEYS = ['password', 'pass', 'pwd', 'passwd', 'passwordHash'];
+// Older versions had a pretend sign-in. Keep everything the visitor saved, but never keep a password.
+function removeStoredPasswords(obj){
+  let removed = false;
+  if (obj && typeof obj === 'object') PASSWORD_KEYS.forEach(k => { if (k in obj) { delete obj[k]; removed = true; } });
+  return removed;
+}
 function loadState() {
   try {
     const s = localStorage.getItem('pt_v3');
@@ -1129,6 +1133,11 @@ function loadState() {
       if (!state.seenTitles) state.seenTitles = [];
       if (!state.history) state.history = [];
       if (!state.tracker) state.tracker = [];
+      const hadPassword = [removeStoredPasswords(state), removeStoredPasswords(state.user)].some(Boolean);
+      // Visitors from before this version who already have a name or genres have finished onboarding.
+      const wasOnboarded = !state.onboarded && (state.user || (state.profile.genres || []).length);
+      if (wasOnboarded) state.onboarded = true;
+      if (hadPassword || wasOnboarded) saveState();
     }
   } catch(e) {}
   applyProfile();
@@ -1193,7 +1202,7 @@ function renderHistory() {
   }
   c.innerHTML = state.history.filter(w=>w.books.length).map(week=>`
     <div class="history-week">
-      <div class="history-week-label">Week of ${week.label||week.week} &mdash; ${week.books.length} books</div>
+      <div class="history-week-label">Week of ${esc(week.label||week.week)} &mdash; ${week.books.length} books</div>
       <div class="history-grid">${week.books.map(book=>{
         const src = (book.cover_url&&book.cover_url.startsWith('http')) ? book.cover_url : (book.isbn&&book.isbn.length>=10?'https://covers.openlibrary.org/b/isbn/'+book.isbn+'-M.jpg':'');
         const amz = 'https://www.amazon.com/s?k='+encodeURIComponent(book.title+' '+book.author);
@@ -1223,24 +1232,13 @@ function applyProfile() {
   document.querySelectorAll('#avoidChips .avoid-chip').forEach(c=>c.classList.toggle('selected',state.profile.avoidThemes.includes(c.dataset.val)));
   const pf=document.getElementById('p-favorites');
   if(pf){pf.value=state.profile.favBooks||'';document.getElementById('p-avoid-authors').value=state.profile.avoidAuthors||'';document.getElementById('p-avoid-custom').value=state.profile.avoidCustom||'';}
-  // Account page: show login state or profile state
-  const loginState = document.getElementById('accountLoginState');
-  const profileState = document.getElementById('accountProfileState');
-  if (loginState && profileState) {
-    if (state.user) {
-      loginState.style.display = 'none';
-      profileState.style.display = 'block';
-      const nameEl = document.getElementById('accountName');
-      if (nameEl) nameEl.textContent = state.user.name ? state.user.name + "'s Profile" : 'Your Profile';
-      const pn = document.getElementById('p-name'); if(pn) pn.value = state.user.name||'';
-      const pe = document.getElementById('p-email'); if(pe) pe.value = state.user.email||'';
-      document.getElementById('nav-account').textContent = state.user.name || 'Account';
-    } else {
-      loginState.style.display = 'block';
-      profileState.style.display = 'none';
-      document.getElementById('nav-account').textContent = 'Sign in';
-    }
-  }
+  // My profile page (no accounts: everything lives in this browser)
+  const name = (state.user && state.user.name) || '';
+  const nameEl = document.getElementById('accountName');
+  if (nameEl) nameEl.textContent = name ? name + "'s profile" : 'My profile';
+  const pn = document.getElementById('p-name'); if (pn) pn.value = name;
+  document.getElementById('nav-account').textContent = 'My profile';
+  renderProfileStats();
   // Sync profile hype filter toggle
   const pht = document.getElementById('profileHypeFilter');
   if (pht) {
@@ -1277,11 +1275,6 @@ function showPage(p) {
   if(p==='home') { applyMoodUI(); showTodaysPicks(); }
 }
 
-function doLogout() {
-  state.user = null;
-  saveState(); applyProfile();
-  showToast('Signed out'); showPage('home');
-}
 
 /* ── DAILY MOOD ────────────────────────────────────────────────────── */
 function getTodayKey() {
@@ -1599,11 +1592,11 @@ document.getElementById('ob-next').addEventListener('click',()=>{
   if(onboardStep===1) state.profile.genres=[...document.querySelectorAll('#onboard-genres .genre-chip.selected')].map(c=>c.dataset.val);
   if(onboardStep===2){state.profile.favBooks=document.getElementById('fav-books').value;state.profile.avoidThemes=document.getElementById('avoid-stuff').value?[document.getElementById('avoid-stuff').value]:[];}
   if(onboardStep===3){const l=document.querySelector('#onboard-length .tag-pill.active');const t=document.querySelector('#onboard-tone .tag-pill.active');const p=document.querySelector('#onboard-pace .tag-pill.active');if(l)state.profile.length=l.dataset.val;if(t)state.profile.tone=t.dataset.val;if(p)state.profile.pace=p.dataset.val;}
-  if(onboardStep===TOTAL_ONBOARD_STEPS){const n=document.getElementById('ob-name').value;const e=document.getElementById('ob-email').value;if(n||e){state.user={name:n||'Reader',email:e};}finishOnboard();return;}
+  if(onboardStep===TOTAL_ONBOARD_STEPS){const n=document.getElementById('ob-name').value.trim();if(n){state.user={...(state.user||{}),name:n};}finishOnboard();return;}
   onboardStep++;updateOnboardUI();
 });
 document.getElementById('ob-skip').addEventListener('click',()=>{if(onboardStep===TOTAL_ONBOARD_STEPS){finishOnboard();return;}onboardStep++;updateOnboardUI();});
-function finishOnboard(){document.getElementById('onboardModal').classList.add('hidden');saveState();applyProfile();showToast('Profile saved. Loading your picks...');setTimeout(()=>loadDailyRecs(),600);}
+function finishOnboard(){document.getElementById('onboardModal').classList.add('hidden');state.onboarded=true;saveState();applyProfile();showToast('Profile saved. Loading your picks...');setTimeout(()=>loadDailyRecs(),600);}
 document.querySelectorAll('#onboard-genres .genre-chip').forEach(c=>c.addEventListener('click',()=>c.classList.toggle('selected')));
 ['onboard-length','onboard-tone','onboard-pace'].forEach(id=>{
   document.querySelectorAll('#'+id+' .tag-pill').forEach(p=>p.addEventListener('click',()=>{document.querySelectorAll('#'+id+' .tag-pill').forEach(x=>x.classList.remove('active'));p.classList.add('active');}));
@@ -1657,13 +1650,129 @@ Use real ISBNs. No markdown.`;
 document.querySelectorAll('#profileGenres .genre-chip').forEach(c=>{c.addEventListener('click',()=>{c.classList.toggle('selected');const v=c.dataset.val;if(c.classList.contains('selected')){if(!state.profile.genres.includes(v))state.profile.genres.push(v);}else{state.profile.genres=state.profile.genres.filter(g=>g!==v);}});});
 document.querySelectorAll('#avoidChips .avoid-chip').forEach(c=>{c.addEventListener('click',()=>{c.classList.toggle('selected');const v=c.dataset.val;if(c.classList.contains('selected')){if(!state.profile.avoidThemes.includes(v))state.profile.avoidThemes.push(v);}else{state.profile.avoidThemes=state.profile.avoidThemes.filter(t=>t!==v);}});});
 function setDiscovery(el){document.querySelectorAll('#discoveryMode .tag-pill').forEach(x=>x.classList.remove('active'));el.classList.add('active');state.profile.discovery=el.dataset.val;}
+/* ── YOUR DATA: stats, Export, Import, Start over ──────────────────── */
+function renderProfileStats(){
+  const el = document.getElementById('profileStats'); if (!el) return;
+  const shown = (state.history || []).reduce((a, w) => a + ((w.books || []).length), 0);
+  const stats = [[state.saved.length, 'in your TBR'], [state.tracker.length, 'in your Journal'], [state.liked.length, 'liked'], [shown, 'shown in History']];
+  el.innerHTML = stats.map(([n, l]) => `<div class="stat"><div class="stat-n">${n}</div><div class="stat-l">${l}</div></div>`).join('');
+}
+const BACKUP_APP = 'pageturner', BACKUP_VERSION = 1;
+function exportData(){
+  saveState();
+  const data = JSON.parse(JSON.stringify(state));
+  removeStoredPasswords(data); removeStoredPasswords(data.user);
+  const file = { app: BACKUP_APP, version: BACKUP_VERSION, exportedAt: new Date().toISOString(), data };
+  const blob = new Blob([JSON.stringify(file, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a');
+  const d = new Date(); const day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  a.href = URL.createObjectURL(blob); a.download = `pageturner-backup-${day}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  showToast('Your data was downloaded');
+}
+// Check a backup file and build clean data from it. Throws a plain-language message if it is not usable.
+function readBackup(text){
+  let file;
+  try { file = JSON.parse(text); } catch (e) { throw new Error("This file isn't a Pageturner backup (it can't be read)."); }
+  if (!file || file.app !== BACKUP_APP || !file.data || typeof file.data !== 'object') throw new Error("This file isn't a Pageturner backup.");
+  if (typeof file.version !== 'number' || file.version > BACKUP_VERSION) throw new Error('This backup was made by a newer version of Pageturner.');
+  const src = file.data, out = JSON.parse(JSON.stringify(DEFAULT_STATE));
+  const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
+  const strArr = v => Array.isArray(v) ? v.filter(x => typeof x === 'string').map(x => x.slice(0, 300)) : [];
+  // Cover links are put into image tags, so only plain https links are kept.
+  const safeUrl = u => (typeof u === 'string' && /^https:\/\/[^\s"'<>`]+$/.test(u)) ? u : '';
+  const books = v => Array.isArray(v) ? v.filter(b => isObj(b) && typeof b.title === 'string' && b.title.trim()).map(b => {
+    const c = { ...b };
+    if ('cover_url' in c) c.cover_url = safeUrl(c.cover_url);
+    if ('coverUrl' in c) c.coverUrl = safeUrl(c.coverUrl);
+    return c;
+  }) : [];
+  if (!isObj(src.profile)) throw new Error('This backup is missing your preferences.');
+  for (const k of Object.keys(out.profile)) {
+    const v = src.profile[k];
+    if (v === undefined) continue;
+    if (Array.isArray(out.profile[k])) out.profile[k] = strArr(v);
+    else if (typeof out.profile[k] === 'boolean') out.profile[k] = !!v;
+    else if (typeof v === 'string') out.profile[k] = v.slice(0, 2000);
+  }
+  out.saved = books(src.saved);
+  // Journal ids end up in click handlers, so only plain numbers are accepted.
+  out.tracker = books(src.tracker).map((e, i) => ({ ...e, id: Number.isFinite(+e.id) ? +e.id : Date.now() + i, rating: Math.max(0, Math.min(5, Math.round(+e.rating) || 0)) }));
+  out.liked = strArr(src.liked); out.disliked = strArr(src.disliked); out.seenTitles = strArr(src.seenTitles); out.searchTags = strArr(src.searchTags);
+  out.history = Array.isArray(src.history) ? src.history.filter(w => isObj(w) && Array.isArray(w.books)).map(w => ({ week: String(w.week || ''), label: String(w.label || ''), books: books(w.books) })) : [];
+  if (isObj(src.taste)) out.taste = { genreFreq: isObj(src.taste.genreFreq) ? src.taste.genreFreq : {}, authorFreq: isObj(src.taste.authorFreq) ? src.taste.authorFreq : {}, likedTitles: strArr(src.taste.likedTitles), savedTitles: strArr(src.taste.savedTitles) };
+  if (isObj(src.mood) && typeof src.mood.value === 'string') out.mood = { value: src.mood.value, date: String(src.mood.date || '') };
+  if (isObj(src.daily) && Array.isArray(src.daily.books)) out.daily = { ...src.daily, books: src.daily.books.map(b => isObj(b) && b.dismissed ? b : (books([b])[0] || null)).filter(Boolean) };
+  if (isObj(src.user)) { out.user = {}; if (typeof src.user.name === 'string') out.user.name = src.user.name.slice(0, 40); if (typeof src.user.email === 'string') out.user.email = src.user.email; }
+  out.onboarded = true;
+  removeStoredPasswords(out); removeStoredPasswords(out.user);
+  return out;
+}
+function describeData(d){
+  const shown = (d.history || []).reduce((a, w) => a + w.books.length, 0);
+  return `${d.saved.length} in your TBR, ${d.tracker.length} in your Journal, ${d.liked.length} liked and ${shown} in History`;
+}
+async function importData(input){
+  const f = input.files && input.files[0]; input.value = '';
+  if (!f) return;
+  if (f.size > 5 * 1024 * 1024) { await askConfirm({ title: "This file can't be imported", body: 'It is too large to be a Pageturner backup.', yes: 'OK', noCancel: true }); return; }
+  let data;
+  try { data = readBackup(await f.text()); }
+  catch (e) { await askConfirm({ title: "This file can't be imported", body: e.message + ' Nothing was changed.', yes: 'OK', noCancel: true }); return; }
+  const hasData = state.saved.length || state.tracker.length || state.liked.length || (state.history || []).length || state.profile.genres.length;
+  const ok = await askConfirm({
+    title: 'Replace the data on this device?',
+    body: `The file has ${describeData(data)}.` + (hasData ? ` It will replace what is on this device now (${describeData(state)}). This can't be undone — export first if you want to keep it.` : ''),
+    yes: 'Replace with this file', danger: !!hasData
+  });
+  if (!ok) return;
+  try { localStorage.setItem('pt_v3', JSON.stringify(data)); } catch (e) { showToast("Couldn't save the imported data in this browser"); return; }
+  try { sessionStorage.setItem('pt_flash', 'Imported: ' + describeData(data)); } catch (e) {}
+  location.reload();
+}
+async function startOver(){
+  const ok = await askConfirm({
+    title: 'Erase everything on this device?',
+    body: `This deletes your preferences, TBR, Journal, History and liked books from this browser (${describeData(state)}). It can't be undone — export first if you might want them back.`,
+    yes: 'Erase everything', danger: true
+  });
+  if (!ok) return;
+  try { localStorage.removeItem('pt_v3'); localStorage.removeItem(RATING_CACHE_KEY); } catch (e) {}
+  try { sessionStorage.setItem('pt_flash', 'Everything was erased. Welcome to Pageturner!'); } catch (e) {}
+  location.href = location.pathname; // fresh start, with onboarding
+}
+// Small confirmation box (works on phones too). Resolves true when the main button is pressed.
+function askConfirm({ title, body, yes, no = 'Cancel', danger = false, noCancel = false }){
+  return new Promise(resolve => {
+    let el = document.getElementById('appConfirm');
+    if (!el) {
+      el = document.createElement('div'); el.id = 'appConfirm'; el.className = 'modal-overlay';
+      el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.style.zIndex = '650';
+      el.innerHTML = `<div class="modal" style="max-width:420px;text-align:center;padding:2rem;"><p class="confirm-title" style="font-family:'Playfair Display',serif;font-size:1.2rem;color:var(--ink);margin-bottom:.6rem;"></p><p class="confirm-body" style="font-size:13px;color:var(--ink-3);font-weight:300;line-height:1.6;margin-bottom:1.5rem;"></p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;"><button class="btn-ghost confirm-no" type="button" style="padding:10px 22px;"></button><button class="btn-primary confirm-yes" type="button" style="padding:10px 22px;"></button></div></div>`;
+      document.body.appendChild(el);
+    }
+    el.querySelector('.confirm-title').textContent = title;
+    el.querySelector('.confirm-body').textContent = body;
+    const y = el.querySelector('.confirm-yes'), n = el.querySelector('.confirm-no');
+    y.textContent = yes; n.textContent = no; n.style.display = noCancel ? 'none' : '';
+    y.style.background = danger ? '#a33a4a' : '';
+    el.classList.remove('hidden'); el.style.display = 'flex';
+    const done = v => { el.style.display = 'none'; y.onclick = n.onclick = null; document.removeEventListener('keydown', onKey); resolve(v); };
+    const onKey = e => { if (e.key === 'Escape') done(false); };
+    y.onclick = () => done(true); n.onclick = () => done(false);
+    document.addEventListener('keydown', onKey);
+    y.focus();
+  });
+}
 function saveProfile(){
   state.profile.favBooks=document.getElementById('p-favorites').value;
   state.profile.avoidAuthors=document.getElementById('p-avoid-authors').value;
   state.profile.avoidCustom=document.getElementById('p-avoid-custom').value;
   state.profile.avoidPopular=document.getElementById('profileHypeFilter')?.checked||false;
-  const n=document.getElementById('p-name').value;if(n){if(!state.user)state.user={};state.user.name=n;}
-  saveState();showToast('Profile saved');
+  const n=document.getElementById('p-name').value.trim();
+  if(n || (state.user && state.user.name)){ if(!state.user) state.user={}; state.user.name=n; }
+  saveState();applyProfile();showToast('Profile saved');
 }
 // Explore search state — three separate buckets
 const exploreState = { emotions: [], tropes: [] };
@@ -2667,13 +2776,6 @@ function removeTBR(title){state.saved=state.saved.filter(b=>b.title!==title);sav
 
 /* ── AUTH ──────────────────────────────────────────────────────────── */
 
-function doLogin(){
-  const email=document.getElementById('login-email').value;
-  const pass=document.getElementById('login-pass').value;
-  if(!email||!pass){showToast('Please fill in all fields');return;}
-  state.user={name:email.split('@')[0],email};
-  saveState(); applyProfile(); showToast('Welcome back'); showPage('home');
-}
 
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000);}
 
@@ -2696,9 +2798,10 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') setMenuOpen(false)
 loadState();
 applyMoodUI();
 pruneOldPicks();
+try { const flash = sessionStorage.getItem('pt_flash'); if (flash) { sessionStorage.removeItem('pt_flash'); setTimeout(() => showToast(flash), 600); } } catch (e) {}
 // A brand-new visitor goes through onboarding first; its last step loads their picks,
 // so nothing is fetched (or added to History) behind the welcome box.
-const _needsOnboarding = !state.user && !state.profile.genres.length;
+const _needsOnboarding = !state.onboarded && !state.user && !state.profile.genres.length;
 setTimeout(()=>{if(!_needsOnboarding && document.getElementById('page-home').classList.contains('active'))showTodaysPicks();},200);
 if(_needsOnboarding)setTimeout(()=>openOnboard(),1400);
 // Coming back to an open tab (maybe the next day): show today's picks, fetching only if needed.
