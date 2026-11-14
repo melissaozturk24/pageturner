@@ -900,13 +900,13 @@ main{max-width:1140px;margin:0 auto;padding:2.5rem 2rem;}
         <div class="profile-grid">
           <div><span class="field-label">First name</span><input class="field-input" id="p-name" placeholder="Your first name" maxlength="40" autocomplete="given-name"></div>
           <div><span class="field-label">Pace</span>
-            <select class="field-select" id="p-pace"><option>Slow burn</option><option>Fast-paced</option><option>Both</option></select>
+            <select class="field-select" id="p-pace" onchange="setReadingPref('pace',this.value)"><option value="">No preference</option><option value="slow">Slow burn</option><option value="fast">Fast-paced</option><option value="both">Both</option></select>
           </div>
           <div><span class="field-label">Length</span>
-            <select class="field-select" id="p-length"><option>No preference</option><option>Short</option><option>Medium</option><option>Long</option></select>
+            <select class="field-select" id="p-length" onchange="setReadingPref('length',this.value)"><option value="">No preference</option><option value="short">Short</option><option value="medium">Medium</option><option value="long">Long</option></select>
           </div>
           <div><span class="field-label">Tone</span>
-            <select class="field-select" id="p-tone"><option>No preference</option><option>Light</option><option>Dark</option><option>Emotional</option><option>Witty</option><option>Philosophical</option></select>
+            <select class="field-select" id="p-tone" onchange="setReadingPref('tone',this.value)"><option value="">No preference</option><option value="light">Light</option><option value="dark">Dark</option><option value="emotional">Emotional</option><option value="witty">Witty</option><option value="philosophical">Philosophical</option></select>
           </div>
         </div>
       </div>
@@ -1134,10 +1134,13 @@ function loadState() {
       if (!state.history) state.history = [];
       if (!state.tracker) state.tracker = [];
       const hadPassword = [removeStoredPasswords(state), removeStoredPasswords(state.user)].some(Boolean);
+      // The email from the old pretend sign-in was never used; it is no longer kept.
+      const hadEmail = !!(state.user && 'email' in state.user);
+      if (hadEmail) delete state.user.email;
       // Visitors from before this version who already have a name or genres have finished onboarding.
       const wasOnboarded = !state.onboarded && (state.user || (state.profile.genres || []).length);
       if (wasOnboarded) state.onboarded = true;
-      if (hadPassword || wasOnboarded) saveState();
+      if (hadPassword || hadEmail || wasOnboarded) saveState();
     }
   } catch(e) {}
   applyProfile();
@@ -1180,7 +1183,7 @@ function addBooksToHistory(books) {
   books.forEach(b => {
     if (!state.seenTitles.includes(b.title)) {
       state.seenTitles.push(b.title);
-      week.books.push({ title:b.title, author:b.author, genre:b.genre, cover_url:b.cover_url||'', isbn:b.isbn||'' });
+      week.books.push({ title:b.title, author:b.author, genre:b.genre, cover_url:verifiedCover(b.cover_url), isbn:b.isbn||'' });
     }
   });
   state.history = state.history.slice(0,12); // keep 12 weeks max
@@ -1204,7 +1207,7 @@ function renderHistory() {
     <div class="history-week">
       <div class="history-week-label">Week of ${esc(week.label||week.week)} &mdash; ${week.books.length} books</div>
       <div class="history-grid">${week.books.map(book=>{
-        const src = (book.cover_url&&book.cover_url.startsWith('http')) ? book.cover_url : (book.isbn&&book.isbn.length>=10?'https://covers.openlibrary.org/b/isbn/'+book.isbn+'-M.jpg':'');
+        const src = bookCover(book);
         const amz = 'https://www.amazon.com/s?k='+encodeURIComponent(book.title+' '+book.author);
         const onld = `if(this.naturalWidth>20&&this.naturalHeight>30){this.classList.add('cover-visible');var p=this.parentNode.querySelector('.history-cover-ph');if(p)p.classList.add('hidden');}`;
         const onerr = `this.onerror=null;this.style.display='none';`;
@@ -1232,6 +1235,8 @@ function applyProfile() {
   document.querySelectorAll('#avoidChips .avoid-chip').forEach(c=>c.classList.toggle('selected',state.profile.avoidThemes.includes(c.dataset.val)));
   const pf=document.getElementById('p-favorites');
   if(pf){pf.value=state.profile.favBooks||'';document.getElementById('p-avoid-authors').value=state.profile.avoidAuthors||'';document.getElementById('p-avoid-custom').value=state.profile.avoidCustom||'';}
+  // Reading preferences (onboarding stores "any" for no preference)
+  [['p-pace','pace'],['p-length','length'],['p-tone','tone']].forEach(([id,k]) => { const el = document.getElementById(id); if (el) { const v = state.profile[k] === 'any' ? '' : (state.profile[k] || ''); el.value = [...el.options].some(o => o.value === v) ? v : ''; } });
   // My profile page (no accounts: everything lives in this browser)
   const name = (state.user && state.user.name) || '';
   const nameEl = document.getElementById('accountName');
@@ -1392,7 +1397,7 @@ RULES FOR SLUMP RESCUE:
 CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13. Set cover_url to https://covers.openlibrary.org/b/isbn/ISBN13-L.jpg using the real ISBN.
 
 Return JSON array of exactly 3 objects:
-[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","slump_confidence":"Why this specific book will work for this reader right now — one sentence, direct and honest.","reason":"SENTENCE 1: The premise in one sentence, no spoilers. SENTENCE 2: What it will feel like to read — the atmosphere and emotional experience.","amazon_search":"title author"}]`;
+[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","slump_confidence":"Why this specific book will work for this reader right now — one sentence, direct and honest.","reason":"One sentence giving the premise, no spoilers. Then one sentence on what it will feel like to read — the atmosphere and emotional experience.","amazon_search":"title author"}]`;
 
   doSlumpRescue(prompt);
 }
@@ -1427,14 +1432,13 @@ async function doSlumpRescue(prompt){
 }
 
 function slumpCardHTML(book) {
+  book = cleanBook({ ...book });
   // Same as bookCardHTML but with slump_confidence shown prominently at top of info
   const amz = 'https://www.amazon.com/s?k=' + encodeURIComponent(book.amazon_search || book.title + ' ' + book.author);
   const gr  = 'https://www.goodreads.com/search?q=' + encodeURIComponent(book.title + ' ' + book.author);
   const isbn = (book.isbn || '').replace(/[^0-9]/g, '');
-  const sources = [];
-  if (book.cover_url && book.cover_url.startsWith('http')) sources.push(book.cover_url);
-  if (isbn.length === 13) sources.push(`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`);
-  if (isbn.length === 13) sources.push(`https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`);
+  // Only a cover found by matching title and author (see getBookInfo); never Gemini's ISBN guess.
+  const sources = [bookCover(book)].filter(Boolean);
   const srcJson = JSON.stringify(sources).replace(/"/g, '&quot;');
   const coverSrc = sources[0] || '';
   const onld = `_coverLoaded(this)`;
@@ -1553,7 +1557,7 @@ function renderTracker() {
     return `<div class="tracker-month-section">
       <div class="tracker-month-label">${label}<span class="tracker-month-count">${entries.length} book${entries.length!==1?'s':''}</span></div>
       ${entries.map(e => {
-        const src = (e.coverUrl&&e.coverUrl.startsWith('http'))?e.coverUrl:(e.isbn&&e.isbn.length>=10?'https://covers.openlibrary.org/b/isbn/'+e.isbn+'-M.jpg':'');
+        const src = bookCover({ title: e.title, author: e.author, cover_url: e.coverUrl });
         const onld=`if(this.naturalWidth>20&&this.naturalHeight>30){this.classList.add('cover-visible');var p=this.parentNode.querySelector('.tracker-cover-ph');if(p)p.classList.add('hidden');}`;
         const onerr=`this.onerror=null;this.style.display='none';`;
         const stars = [1,2,3,4,5].map(v=>`<span class="star-disp ${v<=e.rating?'filled':'empty'}" onclick="setEntryRating(${e.id},${v})">&#9733;</span>`).join('');
@@ -1623,7 +1627,7 @@ Use real ISBNs. No markdown.`;
     const books = await fetchFreshBooks(prompt, 4);
     if (seq !== _obSeq) return;
     booksEl.innerHTML = books.slice(0,4).map(b=>{
-      const src=(b.cover_url&&b.cover_url.startsWith('http'))?b.cover_url:(b.isbn&&b.isbn.length>=10?'https://covers.openlibrary.org/b/isbn/'+b.isbn+'-M.jpg':'');
+      const src=bookCover(b);
       const onld=`if(this.naturalWidth>20&&this.naturalHeight>30){this.classList.add('cover-visible');var p=this.parentNode.querySelector('.ob-preview-cover-ph');if(p)p.classList.add('hidden');}`;
       const onerr=`this.onerror=null;this.style.display='none';`;
       return `<div class="ob-preview-book">
@@ -1635,6 +1639,13 @@ Use real ISBNs. No markdown.`;
       </div>`;
     }).join('');
     loadEl.style.display='none'; booksEl.style.display='flex';
+    // Verified covers fill in when found (placeholder otherwise).
+    books.slice(0,4).forEach((b, i) => getBookInfo(b).then(info => {
+      const el = booksEl.querySelectorAll('.ob-preview-cover')[i]; if (!el || !info || !info.c || el.querySelector('img')) return;
+      const img = document.createElement('img'); img.alt = b.title;
+      img.onload = function(){ if (this.naturalWidth > 20) { this.classList.add('cover-visible'); const ph = el.querySelector('.ob-preview-cover-ph'); if (ph) ph.classList.add('hidden'); } };
+      img.src = info.c; el.prepend(img);
+    }));
   } catch(e) {
     if (seq !== _obSeq) return;
     logRequestError('onboarding preview', e);
@@ -1662,6 +1673,7 @@ function exportData(){
   saveState();
   const data = JSON.parse(JSON.stringify(state));
   removeStoredPasswords(data); removeStoredPasswords(data.user);
+  if (data.user) delete data.user.email;
   const file = { app: BACKUP_APP, version: BACKUP_VERSION, exportedAt: new Date().toISOString(), data };
   const blob = new Blob([JSON.stringify(file, null, 1)], { type: 'application/json' });
   const a = document.createElement('a');
@@ -1704,7 +1716,7 @@ function readBackup(text){
   if (isObj(src.taste)) out.taste = { genreFreq: isObj(src.taste.genreFreq) ? src.taste.genreFreq : {}, authorFreq: isObj(src.taste.authorFreq) ? src.taste.authorFreq : {}, likedTitles: strArr(src.taste.likedTitles), savedTitles: strArr(src.taste.savedTitles) };
   if (isObj(src.mood) && typeof src.mood.value === 'string') out.mood = { value: src.mood.value, date: String(src.mood.date || '') };
   if (isObj(src.daily) && Array.isArray(src.daily.books)) out.daily = { ...src.daily, books: src.daily.books.map(b => isObj(b) && b.dismissed ? b : (books([b])[0] || null)).filter(Boolean) };
-  if (isObj(src.user)) { out.user = {}; if (typeof src.user.name === 'string') out.user.name = src.user.name.slice(0, 40); if (typeof src.user.email === 'string') out.user.email = src.user.email; }
+  if (isObj(src.user)) { out.user = {}; if (typeof src.user.name === 'string') out.user.name = src.user.name.slice(0, 40); }
   out.onboarded = true;
   removeStoredPasswords(out); removeStoredPasswords(out.user);
   return out;
@@ -1765,7 +1777,13 @@ function askConfirm({ title, body, yes, no = 'Cancel', danger = false, noCancel 
     y.focus();
   });
 }
+// Pace / Length / Tone are saved as soon as they change; Today's Picks refresh next time they are shown.
+function setReadingPref(key, value){
+  state.profile[key] = value; saveState();
+  showToast('Saved — your next picks will use this');
+}
 function saveProfile(){
+  ['pace','length','tone'].forEach(k => { const el = document.getElementById('p-' + k); if (el) state.profile[k] = el.value; });
   state.profile.favBooks=document.getElementById('p-favorites').value;
   state.profile.avoidAuthors=document.getElementById('p-avoid-authors').value;
   state.profile.avoidCustom=document.getElementById('p-avoid-custom').value;
@@ -1841,9 +1859,10 @@ function buildProfileContext(){
   if(p.avoidAuthors) ctx+=`Authors to avoid: ${p.avoidAuthors}. `;
   if(p.avoidThemes.length) ctx+=`Themes to avoid: ${p.avoidThemes.join(', ')}. `;
   if(p.avoidCustom) ctx+=`Also avoid: ${p.avoidCustom}. `;
-  if(p.length) ctx+=`Preferred length: ${p.length}. `;
-  if(p.tone) ctx+=`Tone: ${p.tone}. `;
-  if(p.pace) ctx+=`Pace: ${p.pace}. `;
+  const LABEL = { slow:'slow burn', fast:'fast-paced', both:'slow burn or fast-paced' };
+  if(p.length && p.length!=='any') ctx+=`Preferred length: ${p.length}. `;
+  if(p.tone && p.tone!=='any') ctx+=`Tone: ${p.tone}. `;
+  if(p.pace && p.pace!=='any') ctx+=`Pace: ${LABEL[p.pace] || p.pace}. `;
   if(p.discovery) ctx+=`Discovery: ${p.discovery}. `;
   const tasteCtx=buildTasteContext();
   if(tasteCtx) ctx+=`LEARNED TASTE: ${tasteCtx}`;
@@ -1962,7 +1981,11 @@ function normTitle(t){
     .replace(/^(the|a|an) /, '')
     .trim();
 }
-// Everything the visitor has already met: History, never-show-again, TBR, Journal and books on screen.
+// Books the visitor said they loved (onboarding / profile), e.g. "Austerlitz, Circe by Madeline Miller".
+function lovedTitles(){
+  return String(state.profile.favBooks || '').split(/[,;\n]+/).map(x => x.split(/\s+by\s+/i)[0].trim()).filter(x => x.length > 1);
+}
+// Everything the visitor has already met: History, never-show-again, TBR, Journal, loved books and books on screen.
 function seenTitleSet(extra){
   const set = new Set();
   const add = t => { const k = normTitle(t); if (k) set.add(k); };
@@ -1970,12 +1993,16 @@ function seenTitleSet(extra){
   (state.history || []).forEach(w => (w.books || []).forEach(b => add(b.title)));
   (state.saved || []).forEach(b => add(b.title));
   (state.tracker || []).forEach(e => add(e.title));
+  lovedTitles().forEach(add);
   const d = state.daily;
   if (d && Array.isArray(d.books)) d.books.forEach(b => b && add(b.dismissed ? b.dismissed.title : b.title));
   document.querySelectorAll('.book-card[data-title]').forEach(c => add(c.dataset.title));
   (extra || []).forEach(add);
   return set;
 }
+// Gemini sometimes copies instruction labels ("SENTENCE 1:") into its text; remove them.
+function stripLabels(t){ return typeof t === 'string' ? t.replace(/\b(?:sentence|sent\.?)\s*[12]\s*[:.)\-–—]\s*/gi, '').replace(/\s{2,}/g, ' ').trim() : t; }
+function cleanBook(b){ ['reason', 'slump_confidence', 'match_breakdown'].forEach(k => { if (b && typeof b[k] === 'string') b[k] = stripLabels(b[k]); }); return b; }
 // The same sources as seenTitleSet, as readable titles (newest first) for prompts.
 function seenTitleList(){
   const out = [];
@@ -1983,6 +2010,7 @@ function seenTitleList(){
   if (d && Array.isArray(d.books)) d.books.forEach(b => b && out.push(b.dismissed ? b.dismissed.title : b.title));
   (state.saved || []).forEach(b => out.push(b.title));
   (state.tracker || []).forEach(e => out.push(e.title));
+  out.push(...lovedTitles());
   out.push(...(state.seenTitles || []).slice().reverse());
   return out.filter(Boolean);
 }
@@ -1994,7 +2022,7 @@ function pickNew(books, blocked, need){
     const k = normTitle(b.title);
     const known = cachedRating(b);
     if (!k || blocked.has(k) || (known && known.avg < MIN_REAL_RATING)) { rejected.push(b.title); continue; }
-    if (kept.length < need) { kept.push(b); blocked.add(k); }
+    if (kept.length < need) { kept.push(cleanBook(b)); blocked.add(k); }
   }
   return { kept, rejected };
 }
@@ -2035,19 +2063,25 @@ FOLLOW-UP: Return a JSON array of exactly ${ask} books, none of them on the OFF-
   return kept;
 }
 
-/* ── REAL RATINGS (Open Library) ───────────────────────────────────────
-   Shown only when Open Library has an average from at least MIN_RATING_COUNT readers.
-   Looked up after the cards appear; a missing or slow rating never blocks a card.
-   Results are cached for 30 days so a book shows the same value on every load. */
+/* ── REAL RATINGS AND COVERS (Open Library) ──────────────────────────────
+   One search per book: title (matched against every edition's title, so translations
+   like "Zeno's Conscience" find the work filed as "Confession of Zeno") and author.
+   Ratings from all matching entries are combined (Open Library often splits one book
+   into several entries), and shown only when at least MIN_RATING_COUNT readers rated it.
+   The cover comes from the same matched entry, so it is always this title by this author.
+   Looked up after the cards appear; a missing or slow answer never blocks a card.
+   Cached for 30 days so a book shows the same value on every load. */
 const MIN_REAL_RATING = 3.5;     // books rated below this by real readers are swapped out
 const MIN_RATING_COUNT = 5;      // fewer ratings than this is too few to trust (no number shown)
 const RATING_TIMEOUT_MS = 8000;
-const RATING_CACHE_KEY = 'pt_ratings_v1';
+const RATING_CACHE_KEY = 'pt_bookinfo_v2', OLD_RATING_CACHE_KEYS = ['pt_ratings_v1'];
+const INFO_VERSION = 2;          // bump to re-check books saved with an older lookup
 const RATING_TTL_MS = 30 * 864e5, NO_RATING_TTL_MS = 7 * 864e5, RATING_CACHE_MAX = 400;
 let _ratingCache = null;
 const _ratingInflight = new Map();
 function ratingStore(){
   if (_ratingCache) return _ratingCache;
+  try { OLD_RATING_CACHE_KEYS.forEach(k => localStorage.removeItem(k)); } catch (e) {}
   try { _ratingCache = JSON.parse(localStorage.getItem(RATING_CACHE_KEY) || '{}') || {}; } catch (e) { _ratingCache = {}; }
   // Drop expired entries so the cache does not grow.
   const now = Date.now();
@@ -2061,42 +2095,71 @@ function saveRatingStore(){
 }
 function authorKey(a){ const parts = String(a || '').toLowerCase().normalize('NFKD').replace(/[^a-z ]+/g, ' ').trim().split(/\s+/); return parts[parts.length - 1] || ''; }
 function ratingKey(b){ return normTitle(b.title) + '|' + authorKey(b.author); }
+// Covers are shown only when they are Open Library cover images found by this lookup.
+function verifiedCover(u){ return (typeof u === 'string' && /^https:\/\/covers\.openlibrary\.org\/b\/id\/\d+-[SML]\.jpg$/.test(u)) ? u : ''; }
+function bookCover(b){
+  if (!b) return '';
+  const own = verifiedCover(b.cover_url);
+  if (own) return own;
+  const e = ratingStore()[ratingKey(b)];
+  return e ? verifiedCover(e.c) : '';
+}
 // undefined = not looked up yet, null = no trustworthy rating, object = real rating
 function cachedRating(b){
-  if (b && b.realRating !== undefined) return b.realRating;
+  if (b && b.infoV === INFO_VERSION && b.realRating !== undefined) return b.realRating;
   const e = ratingStore()[ratingKey(b)];
   return e ? e.r : undefined;
 }
-async function getRealRating(b){
-  const known = cachedRating(b);
-  if (known !== undefined) return known;
+// Resolves to { r, c } (rating or null, verified cover URL or ''), or undefined if Open Library did not answer.
+async function getBookInfo(b){
   const key = ratingKey(b);
+  const known = ratingStore()[key];
+  if (known) return { r: known.r, c: known.c || '' };
   if (_ratingInflight.has(key)) return _ratingInflight.get(key);
   const job = (async () => {
     const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), RATING_TIMEOUT_MS);
     try {
-      const q = new URLSearchParams({ title: b.title, fields: 'key,title,author_name,ratings_average,ratings_count', limit: '10' });
+      const q = new URLSearchParams({ q: 'title:"' + String(b.title).replace(/["\\]/g, ' ') + '"', fields: 'key,title,author_name,ratings_average,ratings_count,cover_i,editions,editions.title,editions.cover_i', limit: '10' });
       if (b.author) q.set('author', b.author);
       const res = await fetch('https://openlibrary.org/search.json?' + q, { signal: ctl.signal });
       if (!res.ok) return undefined;
       const data = await res.json();
       const want = normTitle(b.title), last = authorKey(b.author);
-      const docs = (data.docs || []).filter(d => normTitle(d.title) === want && d.ratings_count &&
-        (!last || (d.author_name || []).some(n => authorKey(n) === last || String(n).toLowerCase().includes(last))));
-      const best = docs.sort((x, y) => y.ratings_count - x.ratings_count)[0];
-      const r = best && best.ratings_count >= MIN_RATING_COUNT
-        ? { avg: Math.round(best.ratings_average * 100) / 100, count: best.ratings_count, source: 'Open Library', url: 'https://openlibrary.org' + best.key }
-        : null;
-      ratingStore()[key] = { r, t: Date.now() }; saveRatingStore();
-      return r;
+      const byAuthor = d => !last || (d.author_name || []).some(n => authorKey(n) === last || String(n).toLowerCase().includes(last));
+      const editionMatch = d => ((d.editions && d.editions.docs) || []).find(e => normTitle(e.title) === want);
+      const matches = (data.docs || []).filter(d => byAuthor(d) && (normTitle(d.title) === want || editionMatch(d)));
+      // Rating: combine every matching entry for this book by this author.
+      const rated = matches.filter(d => d.ratings_count > 0);
+      const count = rated.reduce((a, d) => a + d.ratings_count, 0);
+      const avg = count ? rated.reduce((a, d) => a + d.ratings_average * d.ratings_count, 0) / count : 0;
+      const top = rated.sort((x, y) => y.ratings_count - x.ratings_count)[0];
+      const r = count >= MIN_RATING_COUNT ? { avg: Math.round(avg * 100) / 100, count, source: 'Open Library', url: 'https://openlibrary.org' + top.key } : null;
+      // Cover: the matching edition's cover if it has one (right language), else the matched work's.
+      let coverId = 0;
+      for (const d of matches) { const ed = editionMatch(d); coverId = (ed && ed.cover_i) || d.cover_i || 0; if (coverId) break; }
+      const c = coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : '';
+      ratingStore()[key] = { r, c, t: Date.now() }; saveRatingStore();
+      return { r, c };
     } catch (e) {
-      return undefined; // network problem or too slow: no number, try again another time
+      return undefined; // network problem or too slow: no number, no cover, try again another time
     } finally {
       clearTimeout(timer); _ratingInflight.delete(key);
     }
   })();
   _ratingInflight.set(key, job);
   return job;
+}
+async function getRealRating(b){ const i = await getBookInfo(b); return i === undefined ? undefined : i.r; }
+// Put a verified cover into a card (only if it has none yet).
+function setCardCover(card, url){
+  if (!url) return;
+  card.dataset.coverUrl = url;
+  const img = card.querySelector('.book-cover-wrap img, .history-cover img');
+  if (!img || img.classList.contains('cover-visible')) return;
+  card.dataset.coverSources = JSON.stringify([url]); card.dataset.coverIdx = '0';
+  img.alt = card.dataset.title || '';
+  img.onload = function(){ _coverLoaded(this); }; img.onerror = function(){ _coverFailed(this); };
+  img.style.display = ''; img.src = url;
 }
 function ratingInnerHTML(r){
   if (!r) return '';
@@ -2108,17 +2171,17 @@ function ratingSlotHTML(book){
   const r = cachedRating(book);
   return r === undefined ? `<span class="rating-slot" data-pending="1"></span>` : `<span class="rating-slot">${ratingInnerHTML(r)}</span>`;
 }
-// Look up ratings for every card in `container` in parallel; onRating(card, rating) runs for each result.
+// Look up ratings and covers for every card in `container` in parallel; onRating(card, rating, cover) runs for each result.
 function fillRatings(container, onRating){
   container.querySelectorAll('.book-card[data-title]').forEach(card => {
     const slotEl = card.querySelector('.rating-slot');
-    if (!slotEl) return;
     const book = { title: card.dataset.title, author: card.dataset.author };
-    if (!slotEl.dataset.pending) { if (onRating) onRating(card, cachedRating(book) ?? null); return; }
-    getRealRating(book).then(r => {
-      if (!card.isConnected || r === undefined) return;
-      slotEl.innerHTML = ratingInnerHTML(r); delete slotEl.dataset.pending;
-      if (onRating) onRating(card, r);
+    if (slotEl && !slotEl.dataset.pending) { if (onRating) onRating(card, cachedRating(book) ?? null, bookCover(book)); return; }
+    getBookInfo(book).then(info => {
+      if (!card.isConnected || info === undefined) return;
+      if (slotEl) { slotEl.innerHTML = ratingInnerHTML(info.r); delete slotEl.dataset.pending; }
+      setCardCover(card, info.c);
+      if (onRating) onRating(card, info.r, info.c);
     });
   });
 }
@@ -2214,12 +2277,18 @@ function renderDaily(){
 }
 const MAX_AUTO_SWAPS = 2; // per slot per day, so low-rated suggestions cannot keep a card churning
 // Save each pick's real rating with today's picks (same value on every reload) and swap out low-rated ones.
-function dailyRatingArrived(card, r){
+function dailyRatingArrived(card, r, c){
   const slot = +card.dataset.slot;
   const d = todaysPicks(); if (!d || !card.isConnected) return;
   const b = d.books[slot];
   if (!b || b.dismissed || normTitle(b.title) !== normTitle(card.dataset.title)) return;
-  if (b.realRating === undefined) { b.realRating = r; saveState(); }
+  if (b.infoV !== INFO_VERSION || b.realRating === undefined) {
+    b.realRating = r; b.infoV = INFO_VERSION;
+    b.cover_url = verifiedCover(c); // replaces Gemini's unchecked cover link
+    // History shows the same verified cover (or the placeholder).
+    (state.history || []).forEach(w => (w.books || []).forEach(h => { if (normTitle(h.title) === normTitle(b.title)) h.cover_url = b.cover_url; }));
+    saveState();
+  }
   if (!r || r.avg >= MIN_REAL_RATING) return;
   const swaps = (b.swaps || 0) + 1;
   d.books[slot] = { dismissed: { title: b.title, author: b.author, genre: b.genre }, lowRated: r, swaps };
@@ -2270,7 +2339,7 @@ CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13. Use it to constru
 - NEVER invent ISBNs. Only use ISBNs you are confident are correct.
 
 Return a JSON array of exactly 5 objects:
-[{"title":"exact title","author":"Author Name","genre":"Genre 2-3 words","year":2021,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","reason":"SENTENCE 1: The core premise in one sentence — what the world or situation is, enough to know what the book is about, zero spoilers. SENTENCE 2: What the reader will FEEL reading it — the atmosphere, emotional texture, the kind of experience it delivers. Focus on feeling, not on why we picked it. Max 45 words total. No spoilers.","loved_ref":"If this recommendation connects to a specific book the reader has finished and rated 4+ stars in their journal, name that book title here. Otherwise empty string.","amazon_search":"title author"}]`;
+[{"title":"exact title","author":"Author Name","genre":"Genre 2-3 words","year":2021,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","reason":"One sentence giving the core premise — what the world or situation is, enough to know what the book is about, zero spoilers. Then one sentence on what the reader will FEEL reading it — the atmosphere, emotional texture, the kind of experience it delivers. Focus on feeling, not on why we picked it. Max 45 words total. No spoilers.","loved_ref":"If this recommendation connects to a specific book the reader has finished and rated 4+ stars in their journal, name that book title here. Otherwise empty string.","amazon_search":"title author"}]`;
   try{
     const books = await fetchFreshBooks(prompt, 5, {signal: ctl.signal});
     if (seq !== _dailySeq) return;
@@ -2343,7 +2412,7 @@ RULES:
 ${coverInstruction}
 
 Return a JSON array of exactly 3 objects. Each must have a "match_breakdown" field that honestly lists which criteria it fully satisfies, which it partially satisfies, and which it does not satisfy:
-[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.38,"pages":320,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"94%","reason":"SENTENCE 1: The core premise in one sentence — what the situation or world is, no spoilers. SENTENCE 2: What it will feel like to read it, and which specific criteria from this search it delivers. Max 45 words. Be honest if the match is partial.","match_breakdown":"Fully matches: [list]. Partially matches: [list]. Does not match: [list or none].","amazon_search":"title author"}]`;
+[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.38,"pages":320,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"94%","reason":"One sentence giving the core premise — what the situation or world is, no spoilers. Then one sentence on what it will feel like to read it, and which specific criteria from this search it delivers. Max 45 words. Be honest if the match is partial.","match_breakdown":"Fully matches: [list]. Partially matches: [list]. Does not match: [list or none].","amazon_search":"title author"}]`;
 
   doSearch(prompt);
 }
@@ -2401,7 +2470,7 @@ Similar means: same narrative DNA — tone, pacing, emotional register, protagon
 RATING RULE: Every book must have a Goodreads rating of at least 4.0.
 CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13 (13 digits, starts 978/979). Set cover_url to https://covers.openlibrary.org/b/isbn/ISBN13-L.jpg using the real ISBN. Only use ISBNs you are confident are correct.
 Return JSON array of exactly 3:
-[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.38,"pages":320,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"96%","reason":"SENTENCE 1: The core premise in one sentence, no spoilers. SENTENCE 2: What the reader will feel — the specific emotional quality that makes it similar to the reference book. Max 40 words.","amazon_search":"title author"}]`;
+[{"title":"exact title","author":"Author Name","genre":"Genre","year":2022,"goodreads_rating":4.38,"pages":320,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","match_score":"96%","reason":"One sentence giving the core premise, no spoilers. Then one sentence on what the reader will feel — the specific emotional quality that makes it similar to the reference book. Max 40 words.","amazon_search":"title author"}]`;
   doMoreLike(prompt, title);
 }
 function doMoreLike(prompt, title){
@@ -2447,7 +2516,7 @@ async function fetchReplacement(slot, prompt) {
 ${why}
 NEVER recommend: ${seen.join(', ')}.
 Rating: 4.0+ required. English only.
-Return JSON array of exactly 1 object: [{"title":"title","author":"Author","genre":"Genre","year":2022,"goodreads_rating":4.3,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg using actual ISBN","reason":"SENTENCE 1: The core premise in one sentence, no spoilers. SENTENCE 2: What it will feel like to read — the atmosphere and emotional experience. Max 40 words.","amazon_search":"title author"}]`;
+Return JSON array of exactly 1 object: [{"title":"title","author":"Author","genre":"Genre","year":2022,"goodreads_rating":4.3,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg using actual ISBN","reason":"One sentence giving the core premise, no spoilers. Then one sentence on what it will feel like to read — the atmosphere and emotional experience. Max 40 words.","amazon_search":"title author"}]`;
     }
     const books = await fetchFreshBooks(prompt, 1, { extraBlocked: [book.title] });
     const cur = todaysPicks();
@@ -2517,27 +2586,14 @@ function closeConfirm(confirmed) {
 }
 
 function bookCardHTML(book, showGenreFlag=false, showMatch=false) {
+  book = cleanBook({ ...book });
   const amz = 'https://www.amazon.com/s?k=' + encodeURIComponent(book.amazon_search || book.title + ' ' + book.author);
   const gr  = 'https://www.goodreads.com/search?q=' + encodeURIComponent(book.title + ' ' + book.author);
 
-  // Build a prioritised list of cover URLs to try in sequence.
-  // All load as plain <img src> — no fetch(), no CORS.
   const isbn = (book.isbn||'').replace(/[^0-9]/g,'');
-  const sources = [];
-
-  // 1. AI-provided URL (Google Books volume ID or direct cover URL)
-  if (book.cover_url && book.cover_url.startsWith('http')) sources.push(book.cover_url);
-
-  // 2. Open Library by ISBN-13 (most reliable free source, ~90% coverage)
-  if (isbn.length === 13) sources.push(`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`);
-  if (isbn.length === 13) sources.push(`https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`);
-
-  // 3. Open Library by ISBN-10
-  if (isbn.length === 10) sources.push(`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`);
-
-  // 4. Google Books thumbnail (works as img src, CORS-free for images)
-  const gbQuery = encodeURIComponent(book.title + ' ' + (book.author||''));
-  sources.push(`https://books.google.com/books/content?vid=ISBN${isbn}&printsec=frontcover&img=1&zoom=1&source=gbs_api`);
+  // Only a cover found by matching title and author (see getBookInfo); never Gemini's ISBN guess,
+  // which can belong to a different book. No verified cover yet: the placeholder shows.
+  const sources = [bookCover(book)].filter(Boolean);
 
   // Deduplicate
   const uniqueSources = [...new Set(sources.filter(Boolean))];
@@ -2552,7 +2608,7 @@ function bookCardHTML(book, showGenreFlag=false, showMatch=false) {
   return `<div class="book-card" data-title="${esc(book.title)}" data-author="${esc(book.author)}" data-genre="${esc(book.genre||'')}" data-reason="${esc(book.reason||'')}" data-isbn="${esc(isbn)}" data-cover-url="${esc(imgSrc)}" data-cover-sources="${sourcesJson}" data-cover-idx="0">
   <div class="book-cover-wrap">
     ${showGenreFlag && book.genre ? `<div class="book-genre-flag">${esc(book.genre)}</div>` : ''}
-    ${imgSrc ? `<img src="${imgSrc}" alt="${esc(book.title)}" onload="${onloadScript}" onerror="${onerrorScript}" crossorigin="anonymous">` : '<img alt="" style="display:none;">'}
+    ${imgSrc ? `<img src="${imgSrc}" alt="${esc(book.title)}" onload="${onloadScript}" onerror="${onerrorScript}">` : '<img alt="" style="display:none;">'}
     <div class="cover-placeholder"><div class="cp-spine"></div><div class="cp-title">${esc(book.title)}</div><div class="cp-author">${esc(book.author)}</div></div>
   </div>
   <div class="book-info">
@@ -2740,10 +2796,7 @@ function renderTBR(){
   grid.innerHTML=state.saved.map(book=>{
     const isbn=(book.isbn||'').replace(/[^0-9]/g,'');
     // Build sources list same as bookCardHTML
-    const srcs=[];
-    if(book.cover_url&&book.cover_url.startsWith('http'))srcs.push(book.cover_url);
-    if(isbn.length===13)srcs.push('https://covers.openlibrary.org/b/isbn/'+isbn+'-L.jpg');
-    if(isbn.length===13)srcs.push('https://covers.openlibrary.org/b/isbn/'+isbn+'-M.jpg');
+    const srcs=[bookCover(book)].filter(Boolean); // verified covers only
     const srcJson=JSON.stringify(srcs).replace(/"/g,'&quot;');
     const coverSrc=srcs[0]||'';
     const st=book.status||'want';
