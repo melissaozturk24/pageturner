@@ -1089,6 +1089,13 @@ const HEART_EMPTY = '<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.o
 const HEART_FULL  = '<svg viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M8 13.5C8 13.5 1.5 9.5 1.5 5.5C1.5 3.567 3.067 2 5 2C6.105 2 7.09 2.527 7.737 3.348L8 3.7L8.263 3.348C8.91 2.527 9.895 2 11 2C12.933 2 14.5 3.567 14.5 5.5C14.5 9.5 8 13.5 8 13.5Z"/></svg>';
 const BM_EMPTY    = '<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 2H12C12.552 2 13 2.448 13 3V14L8 11L3 14V3C3 2.448 3.448 2 4 2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
 const BM_FULL     = '<svg viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M4 2H12C12.552 2 13 2.448 13 3V14L8 11L3 14V3C3 2.448 3.448 2 4 2Z"/></svg>';
+// Like/Save buttons reflect what the visitor already did, so they stay correct after a reload.
+function likeSaveButtonsHTML(title){
+  const liked = state.liked.includes(title);
+  const saved = state.saved.some(b => b.title === title);
+  return `<button class="book-action like-btn${liked ? ' liked' : ''}">${liked ? HEART_FULL + ' Liked' : HEART_EMPTY + ' Like'}</button>
+    <button class="book-action save-btn${saved ? ' saved' : ''}">${saved ? BM_FULL + ' Saved' : BM_EMPTY + ' Save'}</button>`;
+}
 const CROSS       = '<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 const ARROW_SVG   = '<svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.5 9.5L9.5 2.5M9.5 2.5H5M9.5 2.5V7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
@@ -1104,6 +1111,7 @@ const state = {
   history: [],
   tracker: [],   // reading journal entries
   mood: { value: '', date: '' },  // today's mood selection
+  daily: null,   // today's picks, saved for the day (see showTodaysPicks)
   taste: { genreFreq:{}, authorFreq:{}, likedTitles:[], savedTitles:[] }
 };
 let onboardStep = 1;
@@ -1264,7 +1272,7 @@ function showPage(p) {
 
   }
   if(p==='slump') resetSlump();
-  if(p==='home') applyMoodUI();
+  if(p==='home') { applyMoodUI(); showTodaysPicks(); }
 }
 
 function doLogout() {
@@ -1293,8 +1301,8 @@ function selectMood(btn) {
   loadDailyRecs();
 }
 function changeMood() {
-  state.mood = { value: '', date: '' };
-  saveState();
+  // Only reopens the choices; today's mood stays saved until another one is picked,
+  // so it keeps matching today's saved picks after a reload.
   document.getElementById('moodOptions').style.display = 'flex';
   document.getElementById('moodSelected').style.display = 'none';
   document.querySelectorAll('.mood-btn').forEach(b => b.classList.remove('active'));
@@ -1452,8 +1460,7 @@ function slumpCardHTML(book) {
     ${book.slump_confidence ? `<div style="font-size:11px;color:var(--pink-dark);font-weight:500;margin-top:6px;padding:5px 10px;background:var(--pink-light);border-radius:8px;line-height:1.5;">${esc(book.slump_confidence)}</div>` : ''}
   </div>
   <div class="book-actions">
-    <button class="book-action like-btn">${HEART_EMPTY} Like</button>
-    <button class="book-action save-btn">${BM_EMPTY} Save</button>
+    ${likeSaveButtonsHTML(book.title)}
     <button class="book-action dislike-btn">${CROSS}</button>
   </div>
   <div class="book-links">
@@ -1855,6 +1862,57 @@ function extractBooks(data){
 
 function showSkeletons(id,n){document.getElementById(id).innerHTML=Array(n).fill(`<div class="skeleton-card"><div class="skeleton-cover sk-pulse"></div><div class="skeleton-info"><div class="skeleton-line sk-pulse" style="width:75%"></div><div class="skeleton-line sk-pulse" style="width:50%"></div><div class="skeleton-line sk-pulse" style="width:65%"></div></div></div>`).join('');}
 
+/* ── TODAY'S PICKS, SAVED FOR THE DAY ─────────────────────────────────
+   state.daily = { date, id, profileKey, mood, books }  — one day only.
+   books[i] is a book, or { dismissed: {title,author,genre} } while a ✕'d pick
+   has no replacement yet. Reloads and return visits the same day show these
+   without calling Gemini; a new local day, new preferences or a new mood fetch fresh ones. */
+function profileKey(){
+  const p = state.profile;
+  return JSON.stringify([p.genres, p.favBooks, p.avoidAuthors, p.avoidThemes, p.avoidCustom, p.length, p.tone, p.pace, p.discovery, !!p.avoidPopular]);
+}
+function moodToday(){ return (state.mood && state.mood.date === getTodayKey()) ? (state.mood.value || '') : ''; }
+function todaysPicks(){
+  const d = state.daily;
+  return (d && d.date === getTodayKey() && Array.isArray(d.books) && d.books.length) ? d : null;
+}
+// Picks from an earlier day are deleted so storage does not grow.
+function pruneOldPicks(){
+  if (state.daily && state.daily.date !== getTodayKey()) { state.daily = null; saveState(); }
+}
+let _renderedDailyId = null;
+const _replacing = new Set(); // "dailyId:slot" while a replacement is being fetched
+function showTodaysPicks(){
+  pruneOldPicks();
+  if (_dailyCtl) return; // a request is already running
+  const d = todaysPicks();
+  const mood = moodToday();
+  const stale = !d || d.profileKey !== profileKey() || (mood && mood !== d.mood);
+  if (stale) { loadDailyRecs(); return; }
+  if (_renderedDailyId !== d.id) renderDaily();
+}
+function dismissedCardHTML(book, slot){
+  return `<div class="book-card dismissed-slot" data-slot="${slot}"><div class="error-box" style="padding:1.6rem 1rem;border:none;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;">
+    <div class="empty-title" style="font-size:1.05rem;">Not for you</div>
+    <div class="empty-sub" style="font-size:12px;">You dismissed “${esc(book.title)}”.</div>
+    <button class="section-action find-replacement-btn" type="button">Find a replacement</button></div></div>`;
+}
+function replacingCardHTML(slot){
+  return `<div class="book-card" data-slot="${slot}"><div class="skeleton-cover sk-pulse" style="aspect-ratio:2/3;background:var(--surf-3);"></div><div style="padding:12px;"><div class="skeleton-line sk-pulse" style="width:75%;height:11px;border-radius:4px;background:var(--surf-3);margin-bottom:8px;"></div><div class="skeleton-line sk-pulse" style="width:50%;height:11px;border-radius:4px;background:var(--surf-3);"></div></div></div>`;
+}
+function renderDaily(){
+  const d = todaysPicks(); if (!d) return;
+  const grid = document.getElementById('dailyBooks');
+  grid.innerHTML = d.books.map((b, i) => {
+    if (b && b.dismissed) return _replacing.has(d.id + ':' + i) ? replacingCardHTML(i) : dismissedCardHTML(b.dismissed, i);
+    return bookCardHTML(b, true).replace('<div class="book-card"', `<div class="book-card" data-slot="${i}"`);
+  }).join('');
+  addSimilarRow(grid, d.books.filter(b => b && !b.dismissed));
+  grid.querySelectorAll('.find-replacement-btn').forEach(btn => btn.addEventListener('click', () => fetchReplacement(+btn.closest('.book-card').dataset.slot)));
+  attachBookActions();
+  _renderedDailyId = d.id;
+}
+
 /* ── DAILY RECS ────────────────────────────────────────────────────── */
 let _dailyCtl = null, _dailySeq = 0;
 async function loadDailyRecs(){
@@ -1901,8 +1959,10 @@ Return a JSON array of exactly 5 objects:
   try{
     const data=await callClaude(prompt,{signal:ctl.signal});const books=extractBooks(data);
     if (seq !== _dailySeq) return;
-    addBooksToHistory(books);
-    renderBooks('dailyBooks',books,true);
+    // Save as today's picks; only these newly shown books go into History / never-show-again.
+    state.daily = { date: getTodayKey(), id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), profileKey: profileKey(), mood: moodValue, books };
+    addBooksToHistory(books); // also saves
+    renderDaily();
     hideLine(statusEl);
   }catch(e){
     if (seq !== _dailySeq || (e && e.kind === 'cancelled')) return;
@@ -2041,17 +2101,25 @@ function doMoreLike(prompt, title){
 }
 function resetSearch(){if(_searchCtl)_searchCtl.abort();document.getElementById('moreLikeHeader').style.display='none';document.getElementById('searchResults').innerHTML='';}
 
-/* Replacement for a dismissed daily pick; "Try again" repeats the same request. */
-async function fetchReplacement(card, book, prompt) {
-  card.innerHTML = `<div class="skeleton-cover sk-pulse" style="aspect-ratio:2/3;background:var(--surf-3);"></div><div style="padding:12px;"><div class="skeleton-line sk-pulse" style="width:75%;height:11px;border-radius:4px;background:var(--surf-3);margin-bottom:8px;"></div><div class="skeleton-line sk-pulse" style="width:50%;height:11px;border-radius:4px;background:var(--surf-3);"></div></div>`;
+/* Replacement for a dismissed daily pick (by slot in today's saved picks); "Try again" repeats the same request. */
+async function fetchReplacement(slot, prompt) {
+  const d = todaysPicks();
+  if (!d || !d.books[slot] || !d.books[slot].dismissed) return;
+  const id = d.id, key = id + ':' + slot;
+  if (_replacing.has(key)) return;
+  _replacing.add(key);
+  renderDaily(); // shows a loading card in this slot
+  const book = d.books[slot].dismissed;
+  const cardEl = () => document.querySelector(`#dailyBooks .book-card[data-slot="${slot}"]`);
   const slowTimer = setTimeout(() => {
-    if (!card.isConnected) return;
+    const card = cardEl(); if (!card) return;
     const note = document.createElement('div');
     note.className = 'replace-note';
     note.style.cssText = 'padding:0 12px 12px;font-size:11.5px;color:var(--ink-4);';
     note.textContent = SLOW_TEXT;
     card.appendChild(note);
   }, SLOW_NOTICE_MS);
+  let failure = null;
   try {
     if (!prompt) {
       const ctx = buildProfileContext();
@@ -2064,33 +2132,32 @@ Return JSON array of exactly 1 object: [{"title":"title","author":"Author","genr
     }
     const data = await callClaude(prompt);
     const books = extractBooks(data);
-    if (!card.isConnected) return; // picks were reloaded meanwhile
+    const cur = todaysPicks();
+    if (!cur || cur.id !== id) return; // picks were refreshed meanwhile
     if (books[0]) {
       addBooksToHistory([books[0]]);
-      const newHTML = bookCardHTML(books[0], true);
-      card.insertAdjacentHTML('afterend', newHTML);
-      card.remove();
-      attachBookActions();
-      // Re-wire similar row with updated book list
-      const updatedCards = document.querySelectorAll('#dailyBooks .book-card');
-      const simRow = document.getElementById('similarRow');
-      if (simRow) {
-        simRow._books = Array.from(updatedCards).map(c => ({ title: c.dataset.title, author: c.dataset.author, genre: c.dataset.genre||'' }));
-      }
+      cur.books[slot] = books[0];
+      saveState();
     }
   } catch(e) {
-    if (!card.isConnected) return;
+    failure = e;
     logRequestError('replacement', e);
-    const m = friendlyError(e);
+  } finally {
+    clearTimeout(slowTimer);
+    _replacing.delete(key);
+  }
+  const cur = todaysPicks();
+  if (!cur || cur.id !== id) return;
+  renderDaily();
+  if (failure) {
+    const card = cardEl(); if (!card) return;
+    const m = friendlyError(failure);
     card.innerHTML = `<div class="error-box" role="alert" style="padding:1.6rem 1rem;border:none;"><div class="empty-title" style="font-size:1.05rem;"></div><div class="empty-sub" style="font-size:12px;"></div><button class="section-action retry-btn" type="button">Try again</button></div>`;
     card.querySelector('.empty-title').textContent = m.title;
     card.querySelector('.empty-sub').textContent = m.sub;
-    card.querySelector('.retry-btn').addEventListener('click', () => fetchReplacement(card, book, prompt));
-  } finally {
-    clearTimeout(slowTimer);
+    card.querySelector('.retry-btn').addEventListener('click', () => fetchReplacement(slot, prompt));
   }
 }
-
 /* ── HELPERS ───────────────────────────────────────────────────────── */
 function esc(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
@@ -2182,8 +2249,7 @@ function bookCardHTML(book, showGenreFlag=false, showMatch=false) {
     ${book.match_breakdown ? `<div style="font-size:10.5px;color:var(--ink-4);line-height:1.5;border-top:1px solid var(--border);padding-top:6px;margin-top:4px;font-weight:300;">${esc(book.match_breakdown)}</div>` : ''}
   </div>
   <div class="book-actions">
-    <button class="book-action like-btn">${HEART_EMPTY} Like</button>
-    <button class="book-action save-btn">${BM_EMPTY} Save</button>
+    ${likeSaveButtonsHTML(book.title)}
     <button class="book-action dislike-btn">${CROSS}</button>
   </div>
   <div class="book-links">
@@ -2223,26 +2289,27 @@ function _coverFailed(img) {
   }
 }
 
+// "Similar to:" buttons under Today's Picks.
+function addSimilarRow(container, books){
+  const row = document.createElement('div');
+  row.id = 'similarRow';
+  row.style.cssText = 'grid-column:1/-1;display:flex;gap:8px;padding:1.2rem 0 0;border-top:1px solid var(--border);margin-top:.5rem;flex-wrap:wrap;align-items:center;';
+  row.innerHTML = '<span style="font-size:12px;color:var(--ink-4);font-weight:400;white-space:nowrap;margin-right:4px;">Similar to:</span>' +
+    books.map((b, i) => `<button class="book-action similar-btn" style="flex:none;" data-idx="${i}">${esc(b.title)}</button>`).join('');
+  container.appendChild(row);
+  row._books = books;
+  row.querySelectorAll('.similar-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const b = row._books[parseInt(this.dataset.idx)];
+      if (b) moreLikeThis(b.title, b.author, b.genre||'');
+    });
+  });
+}
 function renderBooks(containerId, books, showFlag=false) {
   const container = document.getElementById(containerId);
   const isDaily = containerId === 'dailyBooks';
   container.innerHTML = books.map(b => bookCardHTML(b, showFlag)).join('');
-  // Similar books row — only under daily picks, as buttons below the grid
-  if (isDaily) {
-    const row = document.createElement('div');
-    row.id = 'similarRow';
-    row.style.cssText = 'grid-column:1/-1;display:flex;gap:8px;padding:1.2rem 0 0;border-top:1px solid var(--border);margin-top:.5rem;flex-wrap:wrap;align-items:center;';
-    row.innerHTML = '<span style="font-size:12px;color:var(--ink-4);font-weight:400;white-space:nowrap;margin-right:4px;">Similar to:</span>' +
-      books.map((b, i) => `<button class="book-action similar-btn" style="flex:none;" data-idx="${i}">${esc(b.title)}</button>`).join('');
-    container.appendChild(row);
-    row._books = books;
-    row.querySelectorAll('.similar-btn').forEach(btn => {
-      btn.addEventListener('click', function() {
-        const b = row._books[parseInt(this.dataset.idx)];
-        if (b) moreLikeThis(b.title, b.author, b.genre||'');
-      });
-    });
-  }
+  if (isDaily) addSimilarRow(container, books);
   attachBookActions();
 }
 
@@ -2324,7 +2391,11 @@ function attachBookActions() {
           card.style.opacity = '0'; card.style.transform = 'scale(0.95)';
           await new Promise(r => setTimeout(r, 320));
           card.style.opacity = '1'; card.style.transform = '';
-          fetchReplacement(card, book);
+          // Remember the dismissal in today's saved picks, then fetch a replacement for that slot.
+          const slot = +card.dataset.slot;
+          const d = todaysPicks();
+          if (d && d.books[slot] && !d.books[slot].dismissed) { d.books[slot] = { dismissed: book }; saveState(); }
+          fetchReplacement(slot);
         });
       } else {
         // In explore — just toggle opacity as before
@@ -2414,8 +2485,16 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') setMenuOpen(false)
 /* ── INIT ──────────────────────────────────────────────────────────── */
 loadState();
 applyMoodUI();
-setTimeout(()=>{if(document.getElementById('page-home').classList.contains('active'))loadDailyRecs();},200);
-if(!state.user&&!state.profile.genres.length)setTimeout(()=>openOnboard(),1400);
+pruneOldPicks();
+// A brand-new visitor goes through onboarding first; its last step loads their picks,
+// so nothing is fetched (or added to History) behind the welcome box.
+const _needsOnboarding = !state.user && !state.profile.genres.length;
+setTimeout(()=>{if(!_needsOnboarding && document.getElementById('page-home').classList.contains('active'))showTodaysPicks();},200);
+if(_needsOnboarding)setTimeout(()=>openOnboard(),1400);
+// Coming back to an open tab (maybe the next day): show today's picks, fetching only if needed.
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible' && document.getElementById('page-home').classList.contains('active') && document.getElementById('onboardModal').classList.contains('hidden')){ applyMoodUI(); showTodaysPicks(); }
+});
 </script>
 </body>
 </html>
