@@ -1778,7 +1778,7 @@ async function callClaude(prompt, opts = {}){
   const body = {
     systemInstruction:{parts:[{text:'You are a literary expert. Respond ONLY with a valid JSON array. No markdown, no backticks, no preamble. Start with [ and end with ].'}]},
     contents:[{role:'user',parts:[{text:prompt}]}],
-    generationConfig:{temperature:0.7,maxOutputTokens:8192,responseMimeType:'application/json'}
+    generationConfig:{temperature:opts.temperature ?? 0.7,maxOutputTokens:8192,responseMimeType:'application/json'}
   };
   const ctl = new AbortController();
   let why = '';
@@ -1867,6 +1867,16 @@ function seenTitleSet(extra){
   (extra || []).forEach(add);
   return set;
 }
+// The same sources as seenTitleSet, as readable titles (newest first) for prompts.
+function seenTitleList(){
+  const out = [];
+  const d = state.daily;
+  if (d && Array.isArray(d.books)) d.books.forEach(b => b && out.push(b.dismissed ? b.dismissed.title : b.title));
+  (state.saved || []).forEach(b => out.push(b.title));
+  (state.tracker || []).forEach(e => out.push(e.title));
+  out.push(...(state.seenTitles || []).slice().reverse());
+  return out.filter(Boolean);
+}
 // Keep books that are new (and not already known to be poorly rated), up to `need`.
 function pickNew(books, blocked, need){
   const kept = [], rejected = [];
@@ -1889,13 +1899,21 @@ async function fetchFreshBooks(prompt, need, opts = {}){
   if (rejected.length) console.info('[no repeats] removed:', rejected.join(' | '));
   if (kept.length < need && !(opts.signal && opts.signal.aborted)) {
     const missing = need - kept.length;
-    const offLimits = [...new Set([...rejected, ...kept.map(b => b.title)])];
-    const topUp = `${prompt}
+    // Gemini tends to ignore a "never recommend" list buried in a long prompt, so the follow-up puts
+    // everything off-limits first, asks for a few spares (some may still be repeats) and for less
+    // obvious choices, with more randomness.
+    const ask = Math.min(missing + 3, 8);
+    const offLimits = [...new Set([...rejected, ...kept.map(b => b.title), ...seenTitleList()])].slice(0, 250);
+    const topUp = `FOLLOW-UP REQUEST. This reader has ALREADY READ OR SEEN every book below, so NONE of them may appear in your answer (rejected just now: ${rejected.join('; ') || 'none'}).
+OFF-LIMITS: ${offLimits.join('; ')}
 
-FOLLOW-UP: Some suggestions were rejected because this reader has already seen them. These titles are OFF-LIMITS: ${offLimits.join('; ')}.
-Return a JSON array of exactly ${missing} different book${missing > 1 ? 's' : ''}, in the same format and following the same rules as above.`;
+Choose less obvious books than you normally would — not the usual genre favourites.
+
+${prompt}
+
+FOLLOW-UP: Return a JSON array of exactly ${ask} books, none of them on the OFF-LIMITS list, in the same format and following the same rules as above.`;
     try {
-      const more = extractBooks(await callClaude(topUp, { signal: opts.signal, timeoutMs: TOPUP_TIMEOUT_MS }));
+      const more = extractBooks(await callClaude(topUp, { signal: opts.signal, timeoutMs: TOPUP_TIMEOUT_MS, temperature: 1.0 }));
       const r2 = pickNew(more, blocked, missing);
       kept.push(...r2.kept);
       console.info(`[no repeats] top-up asked for ${missing}, got ${r2.kept.length}` + (r2.rejected.length ? ', removed: ' + r2.rejected.join(' | ') : ''));
