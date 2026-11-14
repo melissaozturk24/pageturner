@@ -93,6 +93,8 @@ main{max-width:1140px;margin:0 auto;padding:2.5rem 2rem;}
 .book-author{font-size:11px;color:var(--ink-4);margin-bottom:6px;}
 .book-meta{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
 .book-rating{font-size:10.5px;font-weight:600;color:var(--ink-2);display:flex;align-items:center;gap:3px;}
+.real-rating{text-decoration:none;font-weight:500;}
+.real-rating:hover{text-decoration:underline;}
 .book-star{color:var(--pink-dark);}
 .book-pages{font-size:10px;color:var(--ink-4);font-weight:300;}
 .book-match{font-size:10px;font-weight:600;color:var(--pink-dark);}
@@ -523,7 +525,7 @@ main{max-width:1140px;margin:0 auto;padding:2.5rem 2rem;}
       <div>
         <div class="section-title">Today's Picks</div>
         <div style="display:flex;align-items:center;gap:8px;margin-top:5px;">
-          <div class="section-sub" id="dailyPicksSub">Chosen for your taste — no repeats, ever</div>
+          <div class="section-sub" id="dailyPicksSub">Chosen for your taste — never a book you've already seen</div>
           <span id="popularFilterBadge" style="display:none;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;background:var(--surf-3);color:var(--ink-3);border:1px solid var(--border-2);border-radius:20px;padding:2px 10px;">Filter on</span>
         </div>
       </div>
@@ -777,7 +779,7 @@ main{max-width:1140px;margin:0 auto;padding:2.5rem 2rem;}
     <div class="section-head">
       <div>
         <div class="section-title">Reading History</div>
-        <div class="section-sub">Every book we have shown you — none will ever appear again in your picks</div>
+        <div class="section-sub">Every book we have shown you — we leave these out of future picks</div>
       </div>
       <button class="section-action" onclick="clearHistory()">Clear history</button>
     </div>
@@ -1075,7 +1077,7 @@ main{max-width:1140px;margin:0 auto;padding:2.5rem 2rem;}
     </div>
     <div class="about-grid">
       <div class="about-feat"><h4><span class="feat-dot"></span>Gets sharper every day</h4><p>Every like, save, and rejection teaches us more about what actually works for you — not what works for readers in general.</p></div>
-      <div class="about-feat"><h4><span class="feat-dot"></span>No hype. No repeats.</h4><p>Every recommendation is logged. Books that went viral on social media get filtered out unless reader satisfaction over time is genuinely exceptional. You will never see the same book twice.</p></div>
+      <div class="about-feat"><h4><span class="feat-dot"></span>No hype. No repeats.</h4><p>Every recommendation is logged. Books that went viral on social media get filtered out unless reader satisfaction over time is genuinely exceptional. Books already in your History, TBR or Journal are left out of every recommendation. Ratings shown come from real readers on Open Library.</p></div>
       <div class="about-feat"><h4><span class="feat-dot"></span>Specific search, honest results</h4><p>Search by storyline, emotional experience, and story dynamics — across every genre. When we cannot find a perfect match, we say so. We never pretend a book fits criteria it does not.</p></div>
       <div class="about-feat"><h4><span class="feat-dot"></span>Reading Journal</h4><p>Log what you finish, rate it privately, write notes only you will see. Track what you actually loved versus what disappointed you.</p></div>
     </div>
@@ -1413,13 +1415,13 @@ async function doSlumpRescue(prompt){
   booksEl.innerHTML = skeletonGrid(3);
   const stopSlow = showLoadingLine(statusEl, 'Finding books to get you reading again…');
   try {
-    const data  = await callClaude(prompt, {signal: ctl.signal});
-    const books = extractBooks(data);
+    const books = await fetchFreshBooks(prompt, 3, {signal: ctl.signal});
     if (seq !== _slumpSeq) return;
     hideLine(statusEl);
     // Render using bookCardHTML but show slump_confidence as a special badge
     booksEl.innerHTML = books.map(b => slumpCardHTML(b)).join('');
     attachBookActions();
+    dropLowRated(booksEl, () => renderErrorBox(booksEl, new RequestError('low_rated'), () => doSlumpRescue(prompt)));
   } catch(e) {
     if (seq !== _slumpSeq || (e && e.kind === 'cancelled')) return;
     logRequestError('get unstuck', e);
@@ -1453,7 +1455,7 @@ function slumpCardHTML(book) {
     <div class="book-title">${esc(book.title)}</div>
     <div class="book-author">${esc(book.author)}${book.year ? ' &middot; ' + book.year : ''}</div>
     <div class="book-meta">
-      ${book.goodreads_rating ? `<span class="book-rating"><span class="book-star">&#9733;</span> ${book.goodreads_rating}</span>` : ''}
+      ${ratingSlotHTML(book)}
       ${book.pages ? `<span class="book-pages">${book.pages}p</span>` : ''}
     </div>
     ${book.reason ? `<div class="book-reason">${esc(book.reason)}</div>` : ''}
@@ -1625,8 +1627,7 @@ Return JSON array ONLY:
 [{"title":"title","author":"Author","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg using actual ISBN","isbn":"9781234567890"}]
 Use real ISBNs. No markdown.`;
   try {
-    const data = await callClaude(prompt);
-    const books = extractBooks(data);
+    const books = await fetchFreshBooks(prompt, 4);
     if (seq !== _obSeq) return;
     booksEl.innerHTML = books.slice(0,4).map(b=>{
       const src=(b.cover_url&&b.cover_url.startsWith('http'))?b.cover_url:(b.isbn&&b.isbn.length>=10?'https://covers.openlibrary.org/b/isbn/'+b.isbn+'-M.jpg':'');
@@ -1777,7 +1778,7 @@ async function callClaude(prompt, opts = {}){
   const body = {
     systemInstruction:{parts:[{text:'You are a literary expert. Respond ONLY with a valid JSON array. No markdown, no backticks, no preamble. Start with [ and end with ].'}]},
     contents:[{role:'user',parts:[{text:prompt}]}],
-    generationConfig:{temperature:0.7,maxOutputTokens:8192,responseMimeType:'application/json'}
+    generationConfig:{temperature:opts.temperature ?? 0.7,maxOutputTokens:8192,responseMimeType:'application/json'}
   };
   const ctl = new AbortController();
   let why = '';
@@ -1804,6 +1805,8 @@ async function callClaude(prompt, opts = {}){
 // Plain-language message for any failure. Technical details go to the console only.
 function friendlyError(err){
   if (err && err.kind === 'offline') return { title: 'You seem to be offline', sub: 'Check your internet connection, then try again.' };
+  if (err && err.kind === 'no_new_books') return { title: 'No new books this time', sub: "Every suggestion was one you've already seen. Please try again." };
+  if (err && err.kind === 'low_rated') return { title: 'No well-rated matches this time', sub: 'Readers rated every match below ' + MIN_REAL_RATING + '. Please try again.' };
   if (err && err.kind === 'timeout') return { title: 'Our book finder is busy right now', sub: 'It was taking too long to answer. Please try again.' };
   return { title: 'Our book finder is busy right now', sub: 'Lots of readers are searching at once. Please try again in a moment.' };
 }
@@ -1835,6 +1838,190 @@ function showErrorLine(el, err, keptText, retry){
 }
 function hideLine(el){ el.hidden = true; el.classList.remove('is-error'); el.setAttribute('role', 'status'); el.innerHTML = ''; }
 function skeletonGrid(n){ return Array(n).fill(`<div class="skeleton-card"><div class="skeleton-cover sk-pulse"></div><div class="skeleton-info"><div class="skeleton-line sk-pulse" style="width:80%"></div><div class="skeleton-line sk-pulse" style="width:55%"></div></div></div>`).join(''); }
+
+/* ── NO REPEATS: the app checks every answer itself ───────────────────
+   Gemini is asked to avoid seen books, but it does not always listen, so every
+   response is filtered here. Titles are matched loosely: case, punctuation,
+   accents, a leading "The/A/An" and anything after a colon are ignored. */
+function normTitle(t){
+  return String(t || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .split(':')[0]
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/^(the|a|an) /, '')
+    .trim();
+}
+// Everything the visitor has already met: History, never-show-again, TBR, Journal and books on screen.
+function seenTitleSet(extra){
+  const set = new Set();
+  const add = t => { const k = normTitle(t); if (k) set.add(k); };
+  (state.seenTitles || []).forEach(add);
+  (state.history || []).forEach(w => (w.books || []).forEach(b => add(b.title)));
+  (state.saved || []).forEach(b => add(b.title));
+  (state.tracker || []).forEach(e => add(e.title));
+  const d = state.daily;
+  if (d && Array.isArray(d.books)) d.books.forEach(b => b && add(b.dismissed ? b.dismissed.title : b.title));
+  document.querySelectorAll('.book-card[data-title]').forEach(c => add(c.dataset.title));
+  (extra || []).forEach(add);
+  return set;
+}
+// The same sources as seenTitleSet, as readable titles (newest first) for prompts.
+function seenTitleList(){
+  const out = [];
+  const d = state.daily;
+  if (d && Array.isArray(d.books)) d.books.forEach(b => b && out.push(b.dismissed ? b.dismissed.title : b.title));
+  (state.saved || []).forEach(b => out.push(b.title));
+  (state.tracker || []).forEach(e => out.push(e.title));
+  out.push(...(state.seenTitles || []).slice().reverse());
+  return out.filter(Boolean);
+}
+// Keep books that are new (and not already known to be poorly rated), up to `need`.
+function pickNew(books, blocked, need){
+  const kept = [], rejected = [];
+  for (const b of books) {
+    if (!b || !b.title) continue;
+    const k = normTitle(b.title);
+    const known = cachedRating(b);
+    if (!k || blocked.has(k) || (known && known.avg < MIN_REAL_RATING)) { rejected.push(b.title); continue; }
+    if (kept.length < need) { kept.push(b); blocked.add(k); }
+  }
+  return { kept, rejected };
+}
+const TOPUP_TIMEOUT_MS = 30000;
+// Ask Gemini, drop repeats, and make one follow-up request if that leaves too few.
+// Falls short gracefully: returns what it has; only fails if nothing new came back.
+async function fetchFreshBooks(prompt, need, opts = {}){
+  const blocked = seenTitleSet(opts.extraBlocked);
+  const first = extractBooks(await callClaude(prompt, { signal: opts.signal }));
+  const { kept, rejected } = pickNew(first, blocked, need);
+  if (rejected.length) console.info('[no repeats] removed:', rejected.join(' | '));
+  if (kept.length < need && !(opts.signal && opts.signal.aborted)) {
+    const missing = need - kept.length;
+    // Gemini tends to ignore a "never recommend" list buried in a long prompt, so the follow-up puts
+    // everything off-limits first, asks for a few spares (some may still be repeats) and for less
+    // obvious choices, with more randomness.
+    const ask = Math.min(missing + 3, 8);
+    const offLimits = [...new Set([...rejected, ...kept.map(b => b.title), ...seenTitleList()])].slice(0, 250);
+    const topUp = `FOLLOW-UP REQUEST. This reader has ALREADY READ OR SEEN every book below, so NONE of them may appear in your answer (rejected just now: ${rejected.join('; ') || 'none'}).
+OFF-LIMITS: ${offLimits.join('; ')}
+
+Choose less obvious books than you normally would — not the usual genre favourites.
+
+${prompt}
+
+FOLLOW-UP: Return a JSON array of exactly ${ask} books, none of them on the OFF-LIMITS list, in the same format and following the same rules as above.`;
+    try {
+      const more = extractBooks(await callClaude(topUp, { signal: opts.signal, timeoutMs: TOPUP_TIMEOUT_MS, temperature: 1.0 }));
+      const r2 = pickNew(more, blocked, missing);
+      kept.push(...r2.kept);
+      console.info(`[no repeats] top-up asked for ${missing}, got ${r2.kept.length}` + (r2.rejected.length ? ', removed: ' + r2.rejected.join(' | ') : ''));
+    } catch (e) {
+      if (e && e.kind === 'cancelled') throw e;
+      logRequestError('top-up', e); // show what we have
+    }
+  }
+  if (!kept.length) throw new RequestError('no_new_books', 'Every suggestion was already seen or poorly rated');
+  return kept;
+}
+
+/* ── REAL RATINGS (Open Library) ───────────────────────────────────────
+   Shown only when Open Library has an average from at least MIN_RATING_COUNT readers.
+   Looked up after the cards appear; a missing or slow rating never blocks a card.
+   Results are cached for 30 days so a book shows the same value on every load. */
+const MIN_REAL_RATING = 3.5;     // books rated below this by real readers are swapped out
+const MIN_RATING_COUNT = 5;      // fewer ratings than this is too few to trust (no number shown)
+const RATING_TIMEOUT_MS = 8000;
+const RATING_CACHE_KEY = 'pt_ratings_v1';
+const RATING_TTL_MS = 30 * 864e5, NO_RATING_TTL_MS = 7 * 864e5, RATING_CACHE_MAX = 400;
+let _ratingCache = null;
+const _ratingInflight = new Map();
+function ratingStore(){
+  if (_ratingCache) return _ratingCache;
+  try { _ratingCache = JSON.parse(localStorage.getItem(RATING_CACHE_KEY) || '{}') || {}; } catch (e) { _ratingCache = {}; }
+  // Drop expired entries so the cache does not grow.
+  const now = Date.now();
+  for (const [k, v] of Object.entries(_ratingCache)) if (!v || now - v.t > (v.r ? RATING_TTL_MS : NO_RATING_TTL_MS)) delete _ratingCache[k];
+  return _ratingCache;
+}
+function saveRatingStore(){
+  const c = ratingStore(); const keys = Object.keys(c);
+  if (keys.length > RATING_CACHE_MAX) keys.sort((a, b) => c[a].t - c[b].t).slice(0, keys.length - RATING_CACHE_MAX).forEach(k => delete c[k]);
+  try { localStorage.setItem(RATING_CACHE_KEY, JSON.stringify(c)); } catch (e) {}
+}
+function authorKey(a){ const parts = String(a || '').toLowerCase().normalize('NFKD').replace(/[^a-z ]+/g, ' ').trim().split(/\s+/); return parts[parts.length - 1] || ''; }
+function ratingKey(b){ return normTitle(b.title) + '|' + authorKey(b.author); }
+// undefined = not looked up yet, null = no trustworthy rating, object = real rating
+function cachedRating(b){
+  if (b && b.realRating !== undefined) return b.realRating;
+  const e = ratingStore()[ratingKey(b)];
+  return e ? e.r : undefined;
+}
+async function getRealRating(b){
+  const known = cachedRating(b);
+  if (known !== undefined) return known;
+  const key = ratingKey(b);
+  if (_ratingInflight.has(key)) return _ratingInflight.get(key);
+  const job = (async () => {
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), RATING_TIMEOUT_MS);
+    try {
+      const q = new URLSearchParams({ title: b.title, fields: 'key,title,author_name,ratings_average,ratings_count', limit: '10' });
+      if (b.author) q.set('author', b.author);
+      const res = await fetch('https://openlibrary.org/search.json?' + q, { signal: ctl.signal });
+      if (!res.ok) return undefined;
+      const data = await res.json();
+      const want = normTitle(b.title), last = authorKey(b.author);
+      const docs = (data.docs || []).filter(d => normTitle(d.title) === want && d.ratings_count &&
+        (!last || (d.author_name || []).some(n => authorKey(n) === last || String(n).toLowerCase().includes(last))));
+      const best = docs.sort((x, y) => y.ratings_count - x.ratings_count)[0];
+      const r = best && best.ratings_count >= MIN_RATING_COUNT
+        ? { avg: Math.round(best.ratings_average * 100) / 100, count: best.ratings_count, source: 'Open Library', url: 'https://openlibrary.org' + best.key }
+        : null;
+      ratingStore()[key] = { r, t: Date.now() }; saveRatingStore();
+      return r;
+    } catch (e) {
+      return undefined; // network problem or too slow: no number, try again another time
+    } finally {
+      clearTimeout(timer); _ratingInflight.delete(key);
+    }
+  })();
+  _ratingInflight.set(key, job);
+  return job;
+}
+function ratingInnerHTML(r){
+  if (!r) return '';
+  const label = `${r.avg.toFixed(1)} on ${r.source}`;
+  return `<a class="book-rating real-rating" href="${esc(r.url)}" target="_blank" rel="noopener" title="Average of ${r.count} reader ratings on ${esc(r.source)}"><span class="book-star">&#9733;</span> ${esc(label)}</a>`;
+}
+// Placeholder in each card; filled in by fillRatings() once the rating is known.
+function ratingSlotHTML(book){
+  const r = cachedRating(book);
+  return r === undefined ? `<span class="rating-slot" data-pending="1"></span>` : `<span class="rating-slot">${ratingInnerHTML(r)}</span>`;
+}
+// Look up ratings for every card in `container` in parallel; onRating(card, rating) runs for each result.
+function fillRatings(container, onRating){
+  container.querySelectorAll('.book-card[data-title]').forEach(card => {
+    const slotEl = card.querySelector('.rating-slot');
+    if (!slotEl) return;
+    const book = { title: card.dataset.title, author: card.dataset.author };
+    if (!slotEl.dataset.pending) { if (onRating) onRating(card, cachedRating(book) ?? null); return; }
+    getRealRating(book).then(r => {
+      if (!card.isConnected || r === undefined) return;
+      slotEl.innerHTML = ratingInnerHTML(r); delete slotEl.dataset.pending;
+      if (onRating) onRating(card, r);
+    });
+  });
+}
+// For search-style results: remove cards whose real rating is below the minimum.
+function dropLowRated(container, onEmpty){
+  fillRatings(container, (card, r) => {
+    if (!r || r.avg >= MIN_REAL_RATING) return;
+    console.info('[ratings] removed low-rated:', card.dataset.title, r.avg);
+    card.remove();
+    if (!container.querySelector('.book-card') && onEmpty) onEmpty();
+  });
+}
 
 function extractBooks(data){
   const block = data?.promptFeedback?.blockReason;
@@ -1891,10 +2078,13 @@ function showTodaysPicks(){
   if (stale) { loadDailyRecs(); return; }
   if (_renderedDailyId !== d.id) renderDaily();
 }
-function dismissedCardHTML(book, slot){
+function dismissedCardHTML(entry, slot){
+  const book = entry.dismissed;
+  const head = entry.lowRated ? 'Swapped out' : 'Not for you';
+  const sub = entry.lowRated ? `Readers rate “${esc(book.title)}” ${entry.lowRated.avg.toFixed(1)} on ${esc(entry.lowRated.source)}.` : `You dismissed “${esc(book.title)}”.`;
   return `<div class="book-card dismissed-slot" data-slot="${slot}"><div class="error-box" style="padding:1.6rem 1rem;border:none;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;">
-    <div class="empty-title" style="font-size:1.05rem;">Not for you</div>
-    <div class="empty-sub" style="font-size:12px;">You dismissed “${esc(book.title)}”.</div>
+    <div class="empty-title" style="font-size:1.05rem;">${head}</div>
+    <div class="empty-sub" style="font-size:12px;">${sub}</div>
     <button class="section-action find-replacement-btn" type="button">Find a replacement</button></div></div>`;
 }
 function replacingCardHTML(slot){
@@ -1904,13 +2094,29 @@ function renderDaily(){
   const d = todaysPicks(); if (!d) return;
   const grid = document.getElementById('dailyBooks');
   grid.innerHTML = d.books.map((b, i) => {
-    if (b && b.dismissed) return _replacing.has(d.id + ':' + i) ? replacingCardHTML(i) : dismissedCardHTML(b.dismissed, i);
+    if (b && b.dismissed) return _replacing.has(d.id + ':' + i) ? replacingCardHTML(i) : dismissedCardHTML(b, i);
     return bookCardHTML(b, true).replace('<div class="book-card"', `<div class="book-card" data-slot="${i}"`);
   }).join('');
   addSimilarRow(grid, d.books.filter(b => b && !b.dismissed));
   grid.querySelectorAll('.find-replacement-btn').forEach(btn => btn.addEventListener('click', () => fetchReplacement(+btn.closest('.book-card').dataset.slot)));
   attachBookActions();
   _renderedDailyId = d.id;
+  fillRatings(grid, dailyRatingArrived);
+}
+const MAX_AUTO_SWAPS = 2; // per slot per day, so low-rated suggestions cannot keep a card churning
+// Save each pick's real rating with today's picks (same value on every reload) and swap out low-rated ones.
+function dailyRatingArrived(card, r){
+  const slot = +card.dataset.slot;
+  const d = todaysPicks(); if (!d || !card.isConnected) return;
+  const b = d.books[slot];
+  if (!b || b.dismissed || normTitle(b.title) !== normTitle(card.dataset.title)) return;
+  if (b.realRating === undefined) { b.realRating = r; saveState(); }
+  if (!r || r.avg >= MIN_REAL_RATING) return;
+  const swaps = (b.swaps || 0) + 1;
+  d.books[slot] = { dismissed: { title: b.title, author: b.author, genre: b.genre }, lowRated: r, swaps };
+  saveState();
+  console.info('[ratings] swapping out low-rated pick:', b.title, r.avg);
+  setTimeout(() => { if (swaps <= MAX_AUTO_SWAPS) fetchReplacement(slot); else renderDaily(); }, 0);
 }
 
 /* ── DAILY RECS ────────────────────────────────────────────────────── */
@@ -1957,7 +2163,7 @@ CRITICAL — BOOK COVERS: Every book MUST have a real ISBN-13. Use it to constru
 Return a JSON array of exactly 5 objects:
 [{"title":"exact title","author":"Author Name","genre":"Genre 2-3 words","year":2021,"goodreads_rating":4.41,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg","reason":"SENTENCE 1: The core premise in one sentence — what the world or situation is, enough to know what the book is about, zero spoilers. SENTENCE 2: What the reader will FEEL reading it — the atmosphere, emotional texture, the kind of experience it delivers. Focus on feeling, not on why we picked it. Max 45 words total. No spoilers.","loved_ref":"If this recommendation connects to a specific book the reader has finished and rated 4+ stars in their journal, name that book title here. Otherwise empty string.","amazon_search":"title author"}]`;
   try{
-    const data=await callClaude(prompt,{signal:ctl.signal});const books=extractBooks(data);
+    const books = await fetchFreshBooks(prompt, 5, {signal: ctl.signal});
     if (seq !== _dailySeq) return;
     // Save as today's picks; only these newly shown books go into History / never-show-again.
     state.daily = { date: getTodayKey(), id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), profileKey: profileKey(), mood: moodValue, books };
@@ -2045,11 +2251,11 @@ async function searchRequest({prompt, loadingText, retry, render, button}){
   const btn = document.getElementById('searchBtn');
   if (button) { btn.disabled = true; btn.textContent = 'Searching...'; }
   try {
-    const data = await callClaude(prompt, {signal: ctl.signal});
-    const books = extractBooks(data);
+    const books = await fetchFreshBooks(prompt, 3, {signal: ctl.signal});
     if (seq !== _searchSeq) return;
     render(out, books);
     attachBookActions();
+    dropLowRated(out, () => renderErrorBox(out, new RequestError('low_rated'), retry));
   } catch(e) {
     if (seq !== _searchSeq || (e && e.kind === 'cancelled')) return;
     logRequestError('search', e);
@@ -2109,7 +2315,8 @@ async function fetchReplacement(slot, prompt) {
   if (_replacing.has(key)) return;
   _replacing.add(key);
   renderDaily(); // shows a loading card in this slot
-  const book = d.books[slot].dismissed;
+  const entry = d.books[slot];
+  const book = entry.dismissed;
   const cardEl = () => document.querySelector(`#dailyBooks .book-card[data-slot="${slot}"]`);
   const slowTimer = setTimeout(() => {
     const card = cardEl(); if (!card) return;
@@ -2124,18 +2331,21 @@ async function fetchReplacement(slot, prompt) {
     if (!prompt) {
       const ctx = buildProfileContext();
       const seen = state.seenTitles.slice(-200);
+      const why = entry.lowRated
+        ? `Readers rate "${book.title}" by ${book.author} only ${entry.lowRated.avg.toFixed(1)} out of 5 on ${entry.lowRated.source}, so it was swapped out — recommend a different, well-loved book.`
+        : `The reader did NOT like "${book.title}" by ${book.author}${book.genre?' ('+book.genre+')':''} — do not recommend similar books.`;
       prompt = `You are a literary curator. Give exactly 1 book recommendation for this reader: ${ctx}
-The reader did NOT like "${book.title}" by ${book.author}${book.genre?' ('+book.genre+')':''} — do not recommend similar books.
+${why}
 NEVER recommend: ${seen.join(', ')}.
 Rating: 4.0+ required. English only.
 Return JSON array of exactly 1 object: [{"title":"title","author":"Author","genre":"Genre","year":2022,"goodreads_rating":4.3,"isbn":"9781234567890","cover_url":"https://covers.openlibrary.org/b/isbn/9781234567890-L.jpg using actual ISBN","reason":"SENTENCE 1: The core premise in one sentence, no spoilers. SENTENCE 2: What it will feel like to read — the atmosphere and emotional experience. Max 40 words.","amazon_search":"title author"}]`;
     }
-    const data = await callClaude(prompt);
-    const books = extractBooks(data);
+    const books = await fetchFreshBooks(prompt, 1, { extraBlocked: [book.title] });
     const cur = todaysPicks();
     if (!cur || cur.id !== id) return; // picks were refreshed meanwhile
     if (books[0]) {
       addBooksToHistory([books[0]]);
+      if (entry.swaps) books[0].swaps = entry.swaps;
       cur.books[slot] = books[0];
       saveState();
     }
@@ -2240,7 +2450,7 @@ function bookCardHTML(book, showGenreFlag=false, showMatch=false) {
     <div class="book-title">${esc(book.title)}</div>
     <div class="book-author">${esc(book.author)}${book.year ? ' &middot; ' + book.year : ''}</div>
     <div class="book-meta">
-      ${book.goodreads_rating ? `<span class="book-rating"><span class="book-star">&#9733;</span> ${book.goodreads_rating}</span>` : ''}
+      ${ratingSlotHTML(book)}
       ${book.pages ? `<span class="book-pages">${book.pages}p</span>` : ''}
       ${showMatch && book.match_score ? `<span class="book-match">${esc(book.match_score)} match</span>` : ''}
     </div>
@@ -2394,7 +2604,7 @@ function attachBookActions() {
           // Remember the dismissal in today's saved picks, then fetch a replacement for that slot.
           const slot = +card.dataset.slot;
           const d = todaysPicks();
-          if (d && d.books[slot] && !d.books[slot].dismissed) { d.books[slot] = { dismissed: book }; saveState(); }
+          if (d && d.books[slot] && !d.books[slot].dismissed) { d.books[slot] = { dismissed: book, swaps: d.books[slot].swaps || 0 }; saveState(); }
           fetchReplacement(slot);
         });
       } else {
